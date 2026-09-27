@@ -95,6 +95,9 @@
     }
     .chip:hover { border-color: var(--accent); }
 
+    .location { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+    .location .hint { font-size: .85rem; }
+    .location.need button.ghost { border-color: var(--warn); color: var(--warn); }
     details.audio { margin-top: 14px; font-size: .92rem; }
     details.audio summary { cursor: pointer; color: var(--muted); }
     details.audio input { margin-top: 8px; }
@@ -169,6 +172,7 @@
         <button type="button" class="chip" data-text="bghit tajine mn resto fasa" data-city="fes">bghit tajine mn resto fasa</button>
         <button type="button" class="chip" data-text="bghit taxi l jemaa el fna daba" data-city="marrakech">bghit taxi l jemaa el fna daba</button>
         <button type="button" class="chip" data-text="taxi derrière la mosquée" data-city="casablanca">taxi derrière la mosquée</button>
+        <button type="button" class="chip" data-text="waslni l farmasyan daba" data-city="casablanca">waslni l farmasyan daba</button>
       </div>
 
       <div class="row">
@@ -185,6 +189,11 @@
           <label for="phone">Téléphone <span class="hint">(optionnel)</span></label>
           <input id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="06 12 34 56 78">
         </div>
+      </div>
+
+      <div class="location" id="locationRow">
+        <button type="button" class="ghost" id="locBtn">📍 Utiliser ma position</button>
+        <span class="hint" id="locStatus">Pour « la mosquée », « lfarmasyan », « 7da bim » : le lieu réel le plus proche (OpenStreetMap).</span>
       </div>
 
       <details class="audio">
@@ -212,7 +221,7 @@
       <pre id="jsonOutput"></pre>
     </section>
 
-    <footer>Wassal · MoulSot v0.3 (Apache 2.0) · Yassir AI for Everyday Impact</footer>
+    <footer>Wassal · MoulSot v0.3 (Apache 2.0) · Lieux © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">contributeurs OpenStreetMap</a> (ODbL)</footer>
   </div>
 
   <script>
@@ -265,10 +274,43 @@
       return box;
     }
 
+    let userLocation = null;
+
+    const MISSING_LABELS = {
+      user_location: "Votre position (bouton 📍) pour trouver le lieu le plus proche",
+      destination: "La destination",
+      items: "Les articles à commander",
+      service_type: "Le service (taxi, repas, courses…)",
+    };
+
     function placeLabel(point) {
       if (!point) return "—";
       const rel = { behind: "derrière ", front: "devant ", near: "près de ", inside: "dans " }[point.relation] || "";
-      return rel + point.place_name;
+      const dist = point.distance_m != null ? ` (à ${point.distance_m < 1000 ? point.distance_m + " m" : (point.distance_m / 1000).toFixed(1) + " km"})` : "";
+      return rel + point.place_name + dist;
+    }
+
+    function locate() {
+      const status = $("locStatus");
+      if (!navigator.geolocation) {
+        status.textContent = "Géolocalisation non disponible dans ce navigateur.";
+        return;
+      }
+      status.textContent = "Localisation…";
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          userLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          $("locationRow").classList.remove("need");
+          status.textContent = `Position : ${userLocation.lat.toFixed(5)}, ${userLocation.lng.toFixed(5)} (± ${Math.round(pos.coords.accuracy)} m)`;
+        },
+        (err) => {
+          userLocation = null;
+          status.textContent = err.code === err.PERMISSION_DENIED
+            ? "Position refusée : autorisez la localisation pour ce site."
+            : "Position indisponible (ouvrez la page via http://localhost:5000).";
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
+      );
     }
 
     function renderResult(body, httpStatus) {
@@ -307,7 +349,7 @@
       if (d.transcription) summary.appendChild(stat("Transcription", d.transcription.transcription));
 
       const messages = [
-        ...d.missing_fields.map((f) => `Champ manquant : ${f}`),
+        ...d.missing_fields.map((f) => `Il manque : ${MISSING_LABELS[f] || f}`),
         ...d.warnings,
       ];
       messages.forEach((m) => {
@@ -316,6 +358,7 @@
         notes.appendChild(li);
       });
       notes.hidden = messages.length === 0;
+      $("locationRow").classList.toggle("need", d.missing_fields.includes("user_location"));
     }
 
     async function submit(event) {
@@ -333,13 +376,22 @@
         data.append("audio", audioFile);
         data.append("city", $("city").value);
         data.append("phone", $("phone").value.trim());
+        if (userLocation) {
+          data.append("user_lat", userLocation.lat);
+          data.append("user_lng", userLocation.lng);
+        }
         if (text) data.append("darija_text", text);
         options = { method: "POST", body: data };
       } else {
         options = {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ darija_text: text, city: $("city").value, phone: $("phone").value.trim() }),
+          body: JSON.stringify({
+            darija_text: text,
+            city: $("city").value,
+            phone: $("phone").value.trim(),
+            ...(userLocation ? { user_lat: userLocation.lat, user_lng: userLocation.lng } : {}),
+          }),
         };
       }
 
@@ -363,6 +415,7 @@
     }
 
     form.addEventListener("submit", submit);
+    $("locBtn").addEventListener("click", locate);
     $("darijaText").addEventListener("keydown", (e) => {
       if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) form.requestSubmit();
     });
