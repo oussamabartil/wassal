@@ -494,6 +494,8 @@ class TestApi:
         res = client.get("/")
         assert res.status_code == 200
         assert b"Wassal" in res.data
+        # Attribution exigée par la licence ODbL des lieux OSM affichés.
+        assert b"openstreetmap.org/copyright" in res.data
 
     def test_taxi_command_ready(self, client):
         res = post_command(client, darija_text="بغيت تاكسي للقارة", city="casablanca", phone="0612345678")
