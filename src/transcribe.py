@@ -18,6 +18,7 @@ The model is loaded lazily on first use and cached, so the text-only API
 works even when qwen_asr is not installed.
 """
 
+import importlib.util
 import logging
 import os
 import threading
@@ -105,6 +106,14 @@ def _resolve_device() -> str:
 def is_model_loaded() -> bool:
     """Indique si le modèle est déjà en mémoire / whether the model is loaded."""
     return _model is not None
+
+
+def asr_available() -> bool:
+    """
+    La voix est-elle installée sur ce serveur ? False sur l'hébergement gratuit
+    (requirements-server.txt, sans qwen-asr) : l'interface désactive alors le micro.
+    """
+    return importlib.util.find_spec("qwen_asr") is not None
 
 
 def model_status() -> Dict[str, Any]:

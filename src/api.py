@@ -41,7 +41,8 @@ from src import __version__  # noqa: E402
 from src.landmarks import MOROCCO_BBOX, LandmarkResolver, haversine_km  # noqa: E402
 from src.parser import MAX_TEXT_LENGTH, parse_darija_command  # noqa: E402
 from src.transcribe import (  # noqa: E402
-    DEFAULT_MODEL, SUPPORTED_EXTENSIONS, is_model_loaded, model_status, start_background_warmup,
+    DEFAULT_MODEL, SUPPORTED_EXTENSIONS, asr_available, is_model_loaded, model_status,
+    start_background_warmup,
     transcribe_darija_audio,
 )
 
@@ -392,6 +393,7 @@ def create_app(config: Optional[Dict[str, Any]] = None) -> Flask:
             "service": "wassal",
             "version": __version__,
             "asr_model": os.getenv("MOULSOT_MODEL", DEFAULT_MODEL),
+            "asr_available": asr_available(),
             "asr_model_loaded": is_model_loaded(),
             "asr_model_status": model_status(),
             "landmarks": resolver.stats(),

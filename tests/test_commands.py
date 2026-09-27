@@ -513,6 +513,7 @@ class TestApi:
         assert body["success"] is True
         assert body["data"]["status"] == "ok"
         assert body["data"]["asr_model_status"]["state"] in ("not_loaded", "loading", "ready", "error")
+        assert isinstance(body["data"]["asr_available"], bool)
         assert body["data"]["landmarks"]["by_source"]["osm"] > 1000
         assert "ODbL" in body["data"]["osm"]["casablanca"]["license"]
         assert "casablanca" in body["data"]["cities"]
