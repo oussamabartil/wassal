@@ -10,6 +10,7 @@ variantes se ressemblent.
 
 import re
 import unicodedata
+from functools import lru_cache
 from typing import Dict, Iterable, List, Pattern
 
 # Variantes de lettres arabes ramenées à une forme canonique.
@@ -46,6 +47,7 @@ PREFIXES: List[str] = [
 ]
 
 
+@lru_cache(maxsize=65536)  # beaucoup de noms de lieux se répètent ("Pharmacie", "BIM"...)
 def normalize_text(text: str) -> str:
     """
     Normalise un texte Darija pour le matching.

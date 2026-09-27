@@ -12,10 +12,16 @@
 
 | Entrée | Sortie |
 |---|---|
-| `بغيت تاكسي للقارة` (Casablanca) | `ride / taxi` → Gare Casa-Voyageurs `33.5894, -7.5906` |
-| `jib lia khobz o 7lib` | `delivery / food`, items `["bread", "milk"]` |
-| `waslni package ldjamaa fasa` (Fès) | `delivery / package` → Médina Fès, urgence `urgent` |
-| `taxi derrière la mosquée` (Casablanca) | `ride / taxi` → *derrière* Mosquée Hassan II |
+| `بغيت تاكسي للقارة` (Casablanca) | **Yassir Go** → Gare Casa-Voyageurs `33.5894, -7.5906` |
+| `jib lia khobz o 7lib` | **Yassir Market**, items `["bread", "milk"]` |
+| `bghit tajine mn resto fasa` | **Yassir Food**, items `["tajine"]`, urgence `urgent` |
+| `taxi derrière la mosquée` + position GPS | **Yassir Go** → *derrière* la mosquée réelle la plus proche (ex. Mosquée Al Andalous, à 487 m) |
+
+Les services suivent l'offre de Yassir au Maroc : Go (VTC), Food (restaurants) et Market (courses). La livraison de colis est détectée, mais signalée comme hors de cette offre.
+
+Les adresses sont résolues sur **de vrais lieux** : **11 352 lieux OpenStreetMap** (mosquées, pharmacies, gares, banques, hanouts, tram…) à Casablanca, Fès et Marrakech, plus 8 grands repères vérifiés à la main. « La mosquée » désigne la mosquée réelle la plus proche de l'utilisateur. Aucune donnée n'est inventée.
+
+📖 Explication détaillée, exemples réels et limites : [docs/COMMENT_CA_MARCHE.md](docs/COMMENT_CA_MARCHE.md)
 
 ---
 
@@ -64,10 +70,15 @@ wassal/
 ├── src/
 │   ├── transcribe.py   # MoulSot v0.3 : audio -> texte (chargement paresseux, thread-safe)
 │   ├── parser.py       # Texte Darija -> service, sous-type, urgence, articles, confiance
-│   ├── landmarks.py    # Repères marocains -> GPS, relations spatiales, crowdsourcing
+│   ├── landmarks.py    # Lieux réels -> GPS : par nom ou "le plus proche", relations, crowdsourcing
+│   ├── categories.py   # Catégories de lieux : mots Darija <-> tags OpenStreetMap
 │   ├── normalize.py    # Normalisation arabe / arabizi / français partagée
 │   └── api.py          # Serveur Flask (CORS, validation, erreurs JSON standardisées)
 ├── frontend/index.html # Interface web mobile-friendly (servie sur /)
+├── docs/COMMENT_CA_MARCHE.md  # Fonctionnement détaillé + limites + mesures à faire
+├── data/osm/           # Vrais lieux OpenStreetMap (ODbL), un fichier par ville
+├── scripts/import_osm.py  # Réimporte data/osm/ depuis OpenStreetMap
+├── tests/fixtures/osm/ # Extrait réel de data/osm/ pour des tests rapides
 ├── tests/test_commands.py
 ├── .env.example
 └── requirements.txt
@@ -95,7 +106,8 @@ Health check : version, état du modèle ASR, nombre de repères, villes support
 **JSON**
 
 ```json
-{ "darija_text": "بغيت تاكسي للقارة", "city": "casablanca", "phone": "0612345678" }
+{ "darija_text": "taxi derrière la mosquée", "city": "casablanca", "phone": "0612345678",
+  "user_lat": 33.5870, "user_lng": -7.6300 }
 ```
 
 **ou multipart/form-data** avec un fichier `audio` (+ `city`, `phone`) : l'audio est transcrit par MoulSot puis traité comme du texte.
@@ -105,6 +117,9 @@ Health check : version, état du modèle ASR, nombre de repères, villes support
 | `darija_text` | oui (sauf si `audio`) | 500 caractères max ; arabe, arabizi, français ou mélange |
 | `city` | non | `casablanca`, `fes`, `marrakech` (accepte `Casa`, `فاس`, `Fès`…) |
 | `phone` | non | Numéro marocain, normalisé en `+2126XXXXXXXX` |
+| `user_lat`, `user_lng` | non, mais nécessaires pour « la mosquée », « lfarmasyan »… | Position GPS de l'utilisateur (au Maroc). Sert à trouver le lieu le plus proche, à déduire la ville et à remplir le point de départ |
+
+Si un lieu est désigné par sa catégorie sans position, la réponse contient `missing_fields: ["user_location"]` et `unresolved_places` : l'app doit demander la position au lieu de deviner.
 
 **Réponse (`data`)**
 
@@ -112,6 +127,7 @@ Health check : version, état du modèle ASR, nombre de repères, villes support
 {
   "service_type": "ride",
   "subtype": "taxi",
+  "yassir_product": "Yassir Go",
   "destination": {
     "lat": 33.5894, "lng": -7.5906,
     "place": "Gare Casa-Voyageurs", "place_name": "Gare Casa-Voyageurs",
@@ -127,7 +143,7 @@ Health check : version, état du modèle ASR, nombre de repères, villes support
   "warnings": [],
   "language": "darija",
   "yassir_request": {
-    "service": "ride", "category": "taxi",
+    "service": "ride", "category": "taxi", "product": "Yassir Go",
     "pickup":  { "type": "current_location" },
     "dropoff": { "type": "landmark", "lat": 33.5894, "lng": -7.5906, "label": "Gare Casa-Voyageurs" },
     "priority": "normal",
@@ -137,15 +153,15 @@ Health check : version, état du modèle ASR, nombre de repères, villes support
 }
 ```
 
-`ready_for_yassir` est `true` quand le service est identifié, que les champs nécessaires sont présents (destination pour taxi/colis, articles pour la nourriture) et que la confiance dépasse `MIN_CONFIDENCE` (0.6 par défaut). Sinon, `missing_fields` et `warnings` expliquent pourquoi, pour que l'app puisse poser une question de relance.
+`ready_for_yassir` est `true` quand le service est identifié, que les champs nécessaires sont présents (destination pour taxi/colis, articles ou destination pour Food/Market) et que la confiance dépasse `MIN_CONFIDENCE` (0.6 par défaut). Sinon, `missing_fields` et `warnings` expliquent pourquoi, pour que l'app puisse poser une question de relance.
 
 `yassir_request` est le **contrat d'intégration proposé**. Il faudra l'aligner sur l'API partenaire de Yassir.
 
-**Codes d'erreur :** `MISSING_TEXT`, `TEXT_TOO_LONG`, `INVALID_JSON`, `INVALID_CITY`, `INVALID_PHONE`, `UNSUPPORTED_FORMAT`, `UNSUPPORTED_MEDIA_TYPE` (415), `PAYLOAD_TOO_LARGE` (413), `MODEL_UNAVAILABLE` (503), `NO_SPEECH` / `DECODE_ERROR` (422), `INTERNAL_ERROR` (500).
+**Codes d'erreur :** `MISSING_TEXT`, `TEXT_TOO_LONG`, `INVALID_JSON`, `INVALID_CITY`, `INVALID_PHONE`, `INVALID_LOCATION`, `UNSUPPORTED_FORMAT`, `UNSUPPORTED_MEDIA_TYPE` (415), `PAYLOAD_TOO_LARGE` (413), `MODEL_UNAVAILABLE` (503), `NO_SPEECH` / `DECODE_ERROR` (422), `INTERNAL_ERROR` (500).
 
-### `GET /wassal/landmarks?city=fes`
+### `GET /wassal/landmarks?city=fes&category=pharmacy&source=osm&limit=50`
 
-Liste les repères connus (curés et crowdsourcés).
+Liste les lieux connus. Tous les filtres sont optionnels. `source` vaut `curated`, `osm` ou `crowdsourced` ; `limit` va jusqu'à 1000 et vaut 200 par défaut.
 
 ### `POST /wassal/landmarks` (crowdsourcing)
 
@@ -167,23 +183,30 @@ La Darija s'écrit de trois façons, souvent mélangées : alphabet arabe (`بغ
 
 Chaque service a un dictionnaire de mots-clés pondérés :
 
-| Poids | Signification | Exemples |
-|---|---|---|
-| 3 | mot explicite | `taxi`, `تاكسي`, `درايفر`, `colis`, `طرد`, `makla` |
-| 2 | indice fort | `hezni`, `diini`, `hanout`, `طلبية`, chaque article alimentaire |
-| 1-1.5 | indice faible | `waslni`, `jib`, `kolchi`, `7aja` |
+| Service | Produit Yassir | Poids 3 (explicite) | Indices (1 à 2) |
+|---|---|---|---|
+| `taxi` | Yassir Go | `taxi`, `تاكسي`, `درايفر` | `hezni`, `diini`, `waslni` |
+| `food` | Yassir Food | `makla`, `ماكلة`, `resto`, `snack` | `ji3an`, `ghda`, `jib lia` |
+| `market` | Yassir Market | `hanout`, `حانوت`, `courses`, `marjane` | `chri lia`, `souk`, `kolchi` |
+| `package` | — | `colis`, `طرد`, `sift` | `wra9`, `7aja` |
+
+Chaque article ajoute +2 à son service : les courses (`khobz`, `7lib`, `zit`…) vont vers Market, les plats (`pizza`, `tajine`, `harira`…) vers Food. Les boissons (`coca`, `jus`) ajoutent +1 aux deux.
 
 La confiance combine la force du signal et l'écart avec le deuxième service. `waslni` seul veut dire "emmène-moi" (course), mais `waslni package` devient une livraison de colis.
 
 Urgence : `fasa`, `daba`, `dlak`, `zerba`, `دغيا` → `urgent` ; `basr`, `bsr3a`, `vite` → `quick` ; sinon `normal`.
 
-### 3. Adresses (`landmarks.py`)
+### 3. Adresses (`landmarks.py`, `categories.py`)
 
-- Les alias génériques (`gare`, `jamaa`, `المحطة`) sont résolus **dans la ville demandée** : `jamaa` donne Hassan II à Casablanca, la Médina (Quaraouiyine) à Fès, la Koutoubia à Marrakech.
-- L'alias le plus long gagne : `jemaa el fna` n'est pas confondu avec `jamaa`.
-- Relations spatiales : `derrière` / `wra` / `مور` → `behind`, `7da` / `حدا` / `qrib` → `near`, `9dam` / `قدام` → `front`.
-- Départ et arrivée : `mn lgare l jamaa` donne `pickup` = Gare et `destination` = Mosquée.
-- Sans ville, un alias présent dans plusieurs villes est marqué ambigu (confiance × 0.6), et `ready_for_yassir` reste `false`.
+Les lieux viennent d'**OpenStreetMap** (`data/osm/`, 11 352 lieux) et de 8 grands repères vérifiés à la main.
+
+- **Par nom :** `jamaa hassan 2`, `koutoubia`, `jamaa badr`. Les synonymes Darija sont générés à partir des noms OSM : « Mosquée Badr » se retrouve aussi avec `jamaa badr` ou `جامع بدر`.
+- **Par catégorie :** `la mosquée`, `lfarmasyan`, `sbitar`, `7da bim`. On prend le lieu réel le plus proche de `user_lat` / `user_lng`. Sans position, rien n'est deviné : `missing_fields: ["user_location"]`. Seules « la gare » et « l'aéroport » ont un lieu par défaut par ville.
+- **L'alias le plus long gagne :** `jemaa el fna` n'est pas confondu avec `jamaa`. Les mots de commande (`taxi`, `pizza`…) ne sont jamais pris pour des noms de lieux.
+- **Relations spatiales :** `derrière` / `wra` / `مور` → `behind`, `7da` / `حدا` / `qrib` → `near`, `9dam` / `قدام` → `front`.
+- **Départ et arrivée :** `mn lgare l jamaa hassan 2` donne `pickup` = gare et `destination` = Hassan II.
+
+Mettre à jour les lieux : `python scripts/import_osm.py` (voir [data/osm/README.md](data/osm/README.md)).
 
 ### 4. Transcription (`transcribe.py`)
 
@@ -211,6 +234,7 @@ python src/transcribe.py commande.wav
 | `MAX_AUDIO_SECONDS` | `60` | Durée audio max |
 | `MIN_CONFIDENCE` | `0.6` | Seuil de `ready_for_yassir` |
 | `LANDMARKS_STORE` | `data/crowdsourced_landmarks.json` | Stockage du crowdsourcing |
+| `OSM_DATA_DIR` | `data/osm` | Lieux OpenStreetMap (vide = désactivé) |
 | `WASSAL_API_TOKEN` | – | Protège `POST /wassal/landmarks` |
 | `CORS_ORIGINS` | `*` | Origines autorisées |
 
@@ -218,17 +242,21 @@ python src/transcribe.py commande.wav
 
 ## Ajouter des mots ou des repères
 
-- **Nouveau mot Darija :** ajoutez-le dans `SERVICES`, `FOOD_ITEMS` ou `URGENCY` dans [src/parser.py](src/parser.py), puis un cas dans `tests/test_commands.py`.
-- **Nouveau repère curé :** ajoutez une entrée à `DEFAULT_LANDMARKS` dans [src/landmarks.py](src/landmarks.py) (coordonnées vérifiées sur OpenStreetMap).
-- **Nouvelle ville :** ajoutez-la dans `CITIES` avec son centre et ses alias.
+- **Nouveau mot Darija :** ajoutez-le dans `SERVICES`, `ITEMS` (+ `ITEM_CATEGORY`) ou `URGENCY` dans [src/parser.py](src/parser.py), puis un cas dans `tests/test_commands.py`.
+- **Lieu manquant ou mal placé :** corrigez-le sur [openstreetmap.org](https://www.openstreetmap.org), puis relancez `python scripts/import_osm.py`.
+- **Nouvelle catégorie** (ex. « la mahlaba ») : ajoutez-la dans `CATEGORIES` ([src/categories.py](src/categories.py)) avec ses mots Darija et son tag OSM, puis relancez l'import.
+- **Nouvelle ville :** ajoutez-la dans `CITIES` ([src/landmarks.py](src/landmarks.py)) avec son centre, sa zone `bbox` et ses alias, puis relancez l'import.
 
 ## Limites connues et prochaines étapes
 
 - Parser à base de mots-clés : explicable et rapide, mais il ne comprend pas les négations (`ma bghitch taxi`). Étape suivante : un classifieur léger fine-tuné sur des commandes réelles, en gardant le parser comme repli.
-- 8 repères curés sur 3 villes : la base doit grandir, via le crowdsourcing et un import OpenStreetMap.
+- La couverture OSM est inégale : beaucoup de hanouts et de mosquées de quartier manquent ou n'ont pas de nom. On peut les compléter sur OpenStreetMap ou via le crowdsourcing.
+- « Derrière / à côté » est détecté, mais le point n'est pas encore décalé par rapport au repère.
 - Pas d'envoi réel à Yassir : `yassir_request` est prêt, l'appel HTTP reste à brancher une fois la spec partenaire connue.
 - Serveur de développement Flask : en production, utiliser `gunicorn "src.api:create_app()"` ou `waitress` sous Windows, avec un rate limiting.
 
 ## Licence
 
-Modèle MoulSot v0.3 : Apache 2.0. Licence du code Wassal : à définir (ajouter un fichier `LICENSE`).
+- Modèle MoulSot v0.3 : Apache 2.0.
+- Lieux dans `data/osm/` : © contributeurs [OpenStreetMap](https://www.openstreetmap.org/copyright), licence ODbL 1.0. L'attribution est affichée dans l'interface.
+- Code Wassal : à définir (ajouter un fichier `LICENSE`).

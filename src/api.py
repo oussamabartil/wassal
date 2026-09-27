@@ -37,7 +37,7 @@ from werkzeug.exceptions import HTTPException  # noqa: E402
 from werkzeug.utils import secure_filename  # noqa: E402
 
 from src import __version__  # noqa: E402
-from src.landmarks import LandmarkResolver  # noqa: E402
+from src.landmarks import MOROCCO_BBOX, LandmarkResolver  # noqa: E402
 from src.parser import MAX_TEXT_LENGTH, parse_darija_command  # noqa: E402
 from src.transcribe import DEFAULT_MODEL, SUPPORTED_EXTENSIONS, is_model_loaded, transcribe_darija_audio  # noqa: E402
 
@@ -104,47 +104,76 @@ def _env_float(name: str, default: float) -> float:
         return default
 
 
-def _current_location() -> Dict[str, Any]:
-    """Position GPS actuelle fournie par l'app Yassir / device GPS placeholder."""
+def _current_location(user_location: Optional[Tuple[float, float]]) -> Dict[str, Any]:
+    """Position GPS de l'utilisateur (envoyée par l'app) / user's GPS position."""
+    if user_location:
+        return {"type": "current_location", "lat": user_location[0], "lng": user_location[1]}
     return {"type": "current_location"}
+
+
+def parse_user_location(lat: Any, lng: Any) -> Optional[Tuple[float, float]]:
+    """
+    Valide la position GPS de l'utilisateur (les deux ou aucune, au Maroc).
+    Validate the user's GPS position: both or neither, inside Morocco.
+
+    Raises:
+        ApiError: position incomplète, non numérique ou hors du Maroc.
+    """
+    if lat in (None, "") and lng in (None, ""):
+        return None
+    if lat in (None, "") or lng in (None, ""):
+        raise ApiError("'user_lat' and 'user_lng' must be sent together", code="INVALID_LOCATION")
+    try:
+        lat_f, lng_f = float(lat), float(lng)
+    except (TypeError, ValueError):
+        raise ApiError("'user_lat'/'user_lng' must be numbers", code="INVALID_LOCATION") from None
+    if not (MOROCCO_BBOX["lat_min"] <= lat_f <= MOROCCO_BBOX["lat_max"]
+            and MOROCCO_BBOX["lng_min"] <= lng_f <= MOROCCO_BBOX["lng_max"]):
+        raise ApiError("user location is outside Morocco", code="INVALID_LOCATION")
+    return lat_f, lng_f
 
 
 def _location(point: Dict[str, Any]) -> Dict[str, Any]:
     return {"type": "landmark", "lat": point["lat"], "lng": point["lng"], "label": point["place_name"]}
 
 
-def build_yassir_request(result: Dict[str, Any], phone: Optional[str]) -> Dict[str, Any]:
+def build_yassir_request(result: Dict[str, Any], phone: Optional[str],
+                         user_location: Optional[Tuple[float, float]] = None) -> Dict[str, Any]:
     """
     Construit la requête prête à envoyer à Yassir.
     Build the draft request payload for Yassir. The exact schema must be
     aligned with Yassir's partner API; this is the integration contract
     Wassal proposes.
     """
-    pickup = _location(result["pickup"]) if result.get("pickup") else _current_location()
-    dropoff = _location(result["destination"]) if result.get("destination") else _current_location()
+    pickup = _location(result["pickup"]) if result.get("pickup") else _current_location(user_location)
+    dropoff = _location(result["destination"]) if result.get("destination") else _current_location(user_location)
     payload: Dict[str, Any] = {
         "service": result["service_type"],
         "category": result["subtype"],
+        "product": result["yassir_product"],
         "pickup": pickup,
         "dropoff": dropoff,
         "priority": result["urgency"],
         "customer": {"phone": phone},
         "source": "wassal_voice",
     }
-    if result["subtype"] == "food":
+    if result["subtype"] in ("food", "market"):
         payload["items"] = [{"name": i["name"], "quantity": i["quantity"]} for i in result["item_details"]]
     return payload
 
 
 def process_command(text: str, city: Optional[str], phone: Optional[str],
-                    resolver: LandmarkResolver, min_confidence: float) -> Dict[str, Any]:
+                    resolver: LandmarkResolver, min_confidence: float,
+                    user_location: Optional[Tuple[float, float]] = None) -> Dict[str, Any]:
     """
     Pipeline complet : parsing + résolution d'adresse + décision "prêt pour Yassir".
     Full pipeline: intent parsing + landmark resolution + readiness decision.
     """
     parsed = parse_darija_command(text)
-    route = resolver.resolve_route(text, city)
+    city = city or resolver.city_from_location(user_location)
+    route = resolver.resolve_route(text, city, user_location)
     destination, pickup = route["destination"], route["pickup"]
+    unresolved = route["unresolved"]
 
     missing: List[str] = []
     warnings: List[str] = []
@@ -152,9 +181,16 @@ def process_command(text: str, city: Optional[str], phone: Optional[str],
 
     if parsed["service_type"] == "unknown":
         missing.append("service_type")
-    if subtype in ("taxi", "package") and not destination:
+    # "la mosquée" compris mais pas localisable sans la position de l'utilisateur.
+    needs_location = [u for u in unresolved if u["reason"] == "user_location_required"]
+    if needs_location:
+        missing.append("user_location")
+        for u in needs_location:
+            warnings.append(f"'{u['matched_text']}' ({u['category_label']}): send the user's position "
+                            f"to find the nearest one")
+    if subtype in ("taxi", "package") and not destination and not needs_location:
         missing.append("destination")
-    if subtype == "food" and not parsed["items"] and not destination:
+    if subtype in ("food", "market") and not parsed["items"] and not destination:
         missing.append("items")
 
     # Confiance globale = intention x adresse (si une adresse est utilisée).
@@ -168,6 +204,8 @@ def process_command(text: str, city: Optional[str], phone: Optional[str],
                 warnings.append(f"{label} is uncertain ('{point['place_name']}'), please confirm")
     confidence = round(confidence, 2)
 
+    if subtype == "package":
+        warnings.append("package delivery is not listed in Yassir's Morocco offer (Go, Food, Market)")
     if not city and (destination or pickup):
         warnings.append("no city provided; landmark resolved from text or best guess")
     if confidence < min_confidence and not missing:
@@ -177,6 +215,7 @@ def process_command(text: str, city: Optional[str], phone: Optional[str],
     result: Dict[str, Any] = {
         "service_type": parsed["service_type"],
         "subtype": subtype,
+        "yassir_product": parsed["yassir_product"],
         "destination": destination,
         "pickup": pickup,
         "items": parsed["items"],
@@ -192,7 +231,11 @@ def process_command(text: str, city: Optional[str], phone: Optional[str],
         "input_text": text,
         "city": city,
     }
-    result["yassir_request"] = build_yassir_request(result, phone) if ready else None
+    result["user_location"] = (
+        {"lat": user_location[0], "lng": user_location[1]} if user_location else None
+    )
+    result["unresolved_places"] = unresolved
+    result["yassir_request"] = build_yassir_request(result, phone, user_location) if ready else None
     return result
 
 
@@ -212,6 +255,8 @@ def create_app(config: Optional[Dict[str, Any]] = None) -> Flask:
     app.config.update(
         MAX_CONTENT_LENGTH=int(os.getenv("MAX_UPLOAD_MB", "25")) * 1024 * 1024,
         LANDMARKS_STORE=os.getenv("LANDMARKS_STORE", str(ROOT_DIR / "data" / "crowdsourced_landmarks.json")),
+        # Vrais lieux importés d'OpenStreetMap (scripts/import_osm.py). "" = désactivé.
+        OSM_DATA_DIR=os.getenv("OSM_DATA_DIR", str(ROOT_DIR / "data" / "osm")),
         MIN_CONFIDENCE=_env_float("MIN_CONFIDENCE", 0.6),
         API_TOKEN=os.getenv("WASSAL_API_TOKEN", ""),
     )
@@ -225,7 +270,10 @@ def create_app(config: Optional[Dict[str, Any]] = None) -> Flask:
     origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()]
     CORS(app, resources={r"/wassal/*": {"origins": origins}})
 
-    resolver = LandmarkResolver(store_path=app.config["LANDMARKS_STORE"])
+    osm_dir = app.config["OSM_DATA_DIR"]
+    if osm_dir and not Path(osm_dir).is_absolute():
+        osm_dir = str(ROOT_DIR / osm_dir)
+    resolver = LandmarkResolver(store_path=app.config["LANDMARKS_STORE"], osm_dir=osm_dir or None)
     app.extensions["wassal_resolver"] = resolver
 
     # ---------------------------------------------------------- réponses JSON
@@ -307,12 +355,15 @@ def create_app(config: Optional[Dict[str, Any]] = None) -> Flask:
             "version": __version__,
             "asr_model": os.getenv("MOULSOT_MODEL", DEFAULT_MODEL),
             "asr_model_loaded": is_model_loaded(),
-            "landmarks": len(resolver),
+            "landmarks": resolver.stats(),
+            "osm": {city: {k: meta.get(k) for k in ("osm_timestamp", "loaded", "license")}
+                    for city, meta in resolver.osm_meta.items()},
             "cities": resolver.cities,
             "min_confidence": app.config["MIN_CONFIDENCE"],
         })
 
-    def _read_command_input() -> Tuple[str, Optional[str], Optional[str], Optional[Dict[str, Any]]]:
+    def _read_command_input() -> Tuple[str, Optional[str], Optional[str], Optional[Dict[str, Any]],
+                                       Optional[Tuple[float, float]]]:
         """
         Lit la commande en JSON ou multipart (avec fichier audio).
         Read the command from JSON, or multipart/form-data with an `audio` file.
@@ -351,7 +402,8 @@ def create_app(config: Optional[Dict[str, Any]] = None) -> Flask:
                                details={"supported_cities": resolver.cities})
 
         phone = normalize_phone(fields.get("phone"))
-        return text, city, phone, transcription
+        user_location = parse_user_location(fields.get("user_lat"), fields.get("user_lng"))
+        return text, city, phone, transcription, user_location
 
     def _transcribe_upload(audio) -> Dict[str, Any]:
         """Sauve l'upload dans un fichier temporaire puis transcrit / save + transcribe."""
@@ -383,11 +435,11 @@ def create_app(config: Optional[Dict[str, Any]] = None) -> Flask:
         JSON: {"darija_text": "بغيت تاكسي للقارة", "city": "casablanca", "phone": "0612345678"}
         ou multipart: audio=<fichier>, city=..., phone=...
         """
-        text, city, phone, transcription = _read_command_input()
+        text, city, phone, transcription, user_location = _read_command_input()
         logger.info("Command [%s] city=%s phone=%s text=%r",
                     g.request_id, city, mask_phone(phone), text)
         try:
-            data = process_command(text, city, phone, resolver, app.config["MIN_CONFIDENCE"])
+            data = process_command(text, city, phone, resolver, app.config["MIN_CONFIDENCE"], user_location)
         except (TypeError, ValueError) as exc:
             raise ApiError(str(exc), code="INVALID_TEXT") from exc
         if transcription:
@@ -403,7 +455,12 @@ def create_app(config: Optional[Dict[str, Any]] = None) -> Flask:
         if city and resolver.normalize_city(city) is None:
             raise ApiError(f"unknown city '{city}'", code="INVALID_CITY",
                            details={"supported_cities": resolver.cities})
-        items = resolver.list_landmarks(city)
+        try:
+            limit = min(max(int(request.args.get("limit", 200)), 1), 1000)
+        except ValueError:
+            raise ApiError("'limit' must be an integer", code="INVALID_LIMIT") from None
+        items = resolver.list_landmarks(city, category=request.args.get("category"),
+                                        source=request.args.get("source"), limit=limit)
         return success({"count": len(items), "landmarks": items})
 
     @app.post("/wassal/landmarks")

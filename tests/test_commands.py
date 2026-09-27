@@ -4,6 +4,10 @@ Wassal unit tests. Run: pytest -v
 
 Aucun test ne charge le modèle MoulSot : la transcription est simulée,
 donc la suite tourne en quelques secondes sans GPU ni torch.
+
+Les lieux viennent de tests/fixtures/osm/ : un extrait RÉEL de data/osm/
+(les lieux OpenStreetMap autour de 3 points + les gares), figé pour que
+les tests restent rapides et ne cassent pas à chaque réimport OSM.
 """
 
 import io
@@ -18,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src import api as api_module  # noqa: E402
 from src.api import create_app, normalize_phone, ApiError  # noqa: E402
-from src.landmarks import LandmarkResolver  # noqa: E402
+from src.landmarks import LandmarkResolver, haversine_km  # noqa: E402
 from src.normalize import detect_language, normalize_text  # noqa: E402
 from src.parser import parse_darija_command  # noqa: E402
 from src import transcribe as transcribe_module  # noqa: E402
@@ -29,9 +33,34 @@ from src.transcribe import transcribe_darija_audio  # noqa: E402
 # Fixtures
 # ---------------------------------------------------------------------------
 
+FIXTURE_OSM = Path(__file__).resolve().parent / "fixtures" / "osm"
+DATA_OSM = Path(__file__).resolve().parent.parent / "data" / "osm"
+
+# Positions réelles utilisées dans les tests (centre des extraits OSM).
+CASA_ZERKTOUNI = (33.5870, -7.6300)
+FES_MEDINA = (34.0600, -4.9800)
+
+
+def fixture_places(city, category):
+    with open(FIXTURE_OSM / f"{city}.json", encoding="utf-8") as fh:
+        return [p for p in json.load(fh)["places"] if p["cat"] == category]
+
+
+def nearest_id(places, location):
+    """Calcul indépendant du lieu le plus proche (force brute)."""
+    return min(places, key=lambda p: haversine_km(location[0], location[1], p["lat"], p["lng"]))["id"]
+
+
 @pytest.fixture
 def resolver():
+    """Résolveur sans OSM (repères curés seulement), pour les tests qui le modifient."""
     return LandmarkResolver()
+
+
+@pytest.fixture(scope="module")
+def osm_resolver():
+    """Résolveur chargé avec l'extrait OSM réel (lecture seule)."""
+    return LandmarkResolver(osm_dir=str(FIXTURE_OSM))
 
 
 @pytest.fixture
@@ -39,6 +68,7 @@ def app(tmp_path):
     return create_app({
         "TESTING": True,
         "LANDMARKS_STORE": str(tmp_path / "landmarks.json"),
+        "OSM_DATA_DIR": str(FIXTURE_OSM),
         "API_TOKEN": "",
     })
 
@@ -90,9 +120,11 @@ class TestParser:
         assert r["urgency"] == "normal"
         assert r["confidence"] >= 0.9
 
-    def test_example_food(self):
+    def test_example_groceries_go_to_market(self):
+        # Pain + lait = courses -> Yassir Market (pas Yassir Food, réservé aux restaurants).
         r = parse_darija_command("jib lia khobz o 7lib")
-        assert (r["service_type"], r["subtype"]) == ("delivery", "food")
+        assert (r["service_type"], r["subtype"]) == ("delivery", "market")
+        assert r["yassir_product"] == "Yassir Market"
         assert r["items"] == ["bread", "milk"]
         assert r["urgency"] == "normal"
         assert r["confidence"] >= 0.85
@@ -111,11 +143,32 @@ class TestParser:
         assert parse_darija_command(text)["subtype"] == "taxi"
 
     @pytest.mark.parametrize("text", [
-        "jib lia kolchi mn hanout", "بغيت طلبية ديال الماكلة", "جيب ليا خبز و حليب",
-        "bghit pizza", "chri lia atay o sokar",
+        "بغيت طلبية ديال الماكلة", "bghit pizza", "bghit tajine mn resto", "جيعان بغيت ماكلة",
+        "jib lia pizza o coca",
     ])
     def test_food_variants(self, text):
-        assert parse_darija_command(text)["subtype"] == "food"
+        r = parse_darija_command(text)
+        assert r["subtype"] == "food"
+        assert r["yassir_product"] == "Yassir Food"
+
+    @pytest.mark.parametrize("text", [
+        "jib lia kolchi mn hanout", "جيب ليا خبز و حليب", "chri lia atay o sokar", "jib lia lma",
+        "bghit courses mn marjane",
+    ])
+    def test_market_variants(self, text):
+        r = parse_darija_command(text)
+        assert r["subtype"] == "market"
+        assert r["yassir_product"] == "Yassir Market"
+
+    def test_drink_is_kept_with_meal(self):
+        r = parse_darija_command("jib lia pizza o coca")
+        assert r["items"] == ["pizza", "soda"]
+
+    def test_products(self):
+        assert parse_darija_command("bghit taxi")["yassir_product"] == "Yassir Go"
+        # Colis : pas dans l'offre Yassir Maroc.
+        assert parse_darija_command("sift colis")["yassir_product"] is None
+        assert parse_darija_command("salam")["yassir_product"] is None
 
     @pytest.mark.parametrize("text", [
         "sift had colis l khouya", "عندي طرد بغيت نصيفطو", "waslni had l package",
@@ -174,24 +227,88 @@ class TestParser:
 # ---------------------------------------------------------------------------
 
 class TestLandmarks:
-    def test_arabic_gare_with_prefix(self, resolver):
-        r = resolver.resolve("بغيت تاكسي للقارة", "casablanca")
-        assert r["place_name"] == "Gare Casa-Voyageurs"
-        assert r["confidence"] >= 0.9
+    # --- Catégories : "la mosquée" = la vraie mosquée la plus proche ---
 
-    def test_behind_the_mosque(self, resolver):
-        r = resolver.resolve("derrière la mosquée", "casablanca")
-        assert r["place_name"] == "Mosquée Hassan II"
+    def test_behind_the_mosque_is_nearest_real_mosque(self, osm_resolver):
+        r = osm_resolver.resolve("taxi derrière la mosquée", "casablanca", CASA_ZERKTOUNI)
+        assert r["landmark_id"] == nearest_id(fixture_places("casablanca", "mosque"), CASA_ZERKTOUNI)
+        assert r["match_type"] == "category"
         assert r["relation"] == "behind"
-        assert {"lat", "lng", "place_name", "confidence"} <= r.keys()
+        assert r["source"] == "osm"
+        assert 0 < r["distance_m"] < 1500
 
-    def test_jamaa_depends_on_city(self, resolver):
-        assert resolver.resolve("waslni package ldjamaa", "fes")["landmark_id"] == "fes_medina"
-        assert resolver.resolve("waslni l jamaa", "marrakech")["landmark_id"] == "rak_koutoubia"
+    def test_category_without_location_is_not_guessed(self, osm_resolver):
+        route = osm_resolver.resolve_route("taxi derrière la mosquée", "casablanca")
+        assert route["destination"] is None
+        assert route["unresolved"][0]["reason"] == "user_location_required"
+        assert route["unresolved"][0]["category"] == "mosque"
 
-    def test_longest_alias_wins(self, resolver):
-        # "jemaa el fna" ne doit pas être pris pour "jamaa" (Koutoubia).
-        assert resolver.resolve("bghit nmchi l jemaa el fna", "marrakech")["landmark_id"] == "rak_jemaa_el_fna"
+    def test_nearest_pharmacy(self, osm_resolver):
+        r = osm_resolver.resolve("waslni l farmasyan", "casablanca", CASA_ZERKTOUNI)
+        assert r["landmark_id"] == nearest_id(fixture_places("casablanca", "pharmacy"), CASA_ZERKTOUNI)
+
+    def test_nearest_mosque_in_fes_with_prefix(self, osm_resolver):
+        r = osm_resolver.resolve("waslni package ldjamaa fasa", "fes", FES_MEDINA)
+        assert r["landmark_id"] == nearest_id(fixture_places("fes", "mosque"), FES_MEDINA)
+
+    def test_brand(self, osm_resolver):
+        r = osm_resolver.resolve("7da bim", "casablanca", CASA_ZERKTOUNI)
+        assert r["place_name"] == "BIM"
+        assert r["relation"] == "near"
+
+    def test_city_inferred_from_location(self, osm_resolver):
+        r = osm_resolver.resolve("la pharmacie", None, CASA_ZERKTOUNI)
+        assert r["city"] == "casablanca"
+
+    def test_category_without_city_or_location(self, osm_resolver):
+        route = osm_resolver.resolve_route("la pharmacie")
+        assert route["destination"] is None
+        assert route["unresolved"][0]["reason"] == "city_required"
+
+    # --- Gare : lieu par défaut sans position, gare réelle la plus proche avec ---
+
+    def test_gare_without_location_uses_main_station(self, osm_resolver):
+        r = osm_resolver.resolve("بغيت تاكسي للقارة", "casablanca")
+        assert r["place_name"] == "Gare Casa-Voyageurs"
+        assert r["confidence"] == 0.8
+
+    def test_gare_with_location_is_nearest_station(self, osm_resolver):
+        stations = fixture_places("casablanca", "train_station") + [
+            {"id": "casa_gare_voyageurs", "lat": 33.5894, "lng": -7.5906}]
+        r = osm_resolver.resolve("bghit taxi l lagar", "casablanca", CASA_ZERKTOUNI)
+        assert r["landmark_id"] == nearest_id(stations, CASA_ZERKTOUNI)
+
+    # --- Noms : un lieu précis ---
+
+    def test_named_curated_landmark(self, osm_resolver):
+        r = osm_resolver.resolve("bghit taxi l jamaa hassan 2", "casablanca")
+        assert r["landmark_id"] == "casa_mosquee_hassan2"
+        assert r["match_type"] == "name"
+        assert r["confidence"] == 0.95
+
+    @pytest.mark.parametrize("text", ["waslni l jamaa badr", "وصلني لجامع بدر", "mosquee badr"])
+    def test_named_osm_mosque_with_darija_synonyms(self, osm_resolver, text):
+        # Nom OSM réel : "Mosquée Badr مسجد بدر".
+        r = osm_resolver.resolve(text, "casablanca")
+        assert r["place_name"] == "Mosquée Badr"
+        assert r["match_type"] == "name"
+
+    def test_longest_alias_wins(self, osm_resolver):
+        # "jemaa el fna" ne doit pas être pris pour "jamaa" (catégorie mosquée).
+        r = osm_resolver.resolve("bghit nmchi l jemaa el fna", "marrakech")
+        assert r["landmark_id"] == "rak_jemaa_el_fna"
+
+    def test_command_words_are_never_place_names(self, osm_resolver):
+        # Des lieux OSM s'appellent "Taxi", "Pizza"... ce ne sont pas des destinations.
+        for text in ["bghit taxi", "jib lia pizza", "jib lia khobz daba"]:
+            assert osm_resolver.resolve_route(text, "casablanca")["destination"] is None
+
+    def test_pickup_and_destination(self, osm_resolver):
+        route = osm_resolver.resolve_route("mn lgare l jamaa hassan 2", "casablanca")
+        assert route["pickup"]["landmark_id"] == "casa_gare_voyageurs"
+        assert route["destination"]["landmark_id"] == "casa_mosquee_hassan2"
+
+    # --- Villes ---
 
     @pytest.mark.parametrize("city", ["Casa", "الدار البيضاء", "CASABLANCA"])
     def test_city_aliases(self, resolver, city):
@@ -201,19 +318,22 @@ class TestLandmarks:
         r = resolver.resolve("gare de marrakech")
         assert r["city"] == "marrakech"
 
-    def test_generic_alias_without_city_is_ambiguous(self, resolver):
-        r = resolver.resolve("la gare")
-        assert r is not None
-        assert r["confidence"] < 0.7
+    def test_no_match(self, osm_resolver):
+        assert osm_resolver.resolve("chi blassa ma kaynach", "casablanca") is None
+        assert osm_resolver.resolve("", "casablanca") is None
 
-    def test_pickup_and_destination(self, resolver):
-        route = resolver.resolve_route("mn lgare l jamaa", "casablanca")
-        assert route["pickup"]["landmark_id"] == "casa_gare_voyageurs"
-        assert route["destination"]["landmark_id"] == "casa_mosquee_hassan2"
+    def test_osm_duplicate_of_curated_is_dropped(self, osm_resolver):
+        # Hassan II existe aussi dans OSM : on ne garde qu'un lieu (le curé).
+        matches = osm_resolver.find_matches("jamaa hassan 2", "casablanca")
+        assert len(matches) == 1 and len(matches[0].candidates) == 1
 
-    def test_no_match(self, resolver):
-        assert resolver.resolve("chi blassa ma kaynach", "casablanca") is None
-        assert resolver.resolve("", "casablanca") is None
+    def test_full_osm_snapshot_loads(self):
+        if not (DATA_OSM / "casablanca.json").exists():
+            pytest.skip("data/osm not imported (python scripts/import_osm.py)")
+        stats = LandmarkResolver(osm_dir=str(DATA_OSM)).stats()
+        assert stats["by_source"]["osm"] > 5000
+
+    # --- Crowdsourcing ---
 
     def test_crowdsourcing_add_and_resolve(self, tmp_path):
         store = tmp_path / "lm.json"
@@ -345,6 +465,8 @@ class TestApi:
         body = res.get_json()
         assert body["success"] is True
         assert body["data"]["status"] == "ok"
+        assert body["data"]["landmarks"]["by_source"]["osm"] > 1000
+        assert "ODbL" in body["data"]["osm"]["casablanca"]["license"]
         assert "casablanca" in body["data"]["cities"]
         assert res.headers.get("X-Request-ID")
 
@@ -365,19 +487,53 @@ class TestApi:
         # L'arabe reste lisible dans le JSON (pas de \uXXXX).
         assert "بغيت" in res.get_data(as_text=True)
 
-    def test_food_command_ready_without_destination(self, client):
+    def test_market_command_ready_without_destination(self, client):
         data = post_command(client, darija_text="jib lia khobz o 7lib", city="casablanca").get_json()["data"]
-        assert data["subtype"] == "food"
+        assert data["subtype"] == "market"
+        assert data["yassir_request"]["product"] == "Yassir Market"
         assert data["items"] == ["bread", "milk"]
         assert data["ready_for_yassir"] is True
         assert data["yassir_request"]["dropoff"] == {"type": "current_location"}
 
     def test_package_command(self, client):
-        data = post_command(client, darija_text="waslni package ldjamaa fasa", city="fes").get_json()["data"]
+        data = post_command(client, darija_text="waslni package ldjamaa fasa", city="fes",
+                            user_lat=FES_MEDINA[0], user_lng=FES_MEDINA[1]).get_json()["data"]
         assert data["subtype"] == "package"
         assert data["urgency"] == "urgent"
         assert data["destination"]["city"] == "fes"
         assert data["ready_for_yassir"] is True
+        assert any("not listed in Yassir's Morocco offer" in w for w in data["warnings"])
+
+    def test_nearest_mosque_with_user_location(self, client):
+        data = post_command(client, darija_text="bghit taxi l jamaa", city="casablanca",
+                            user_lat=CASA_ZERKTOUNI[0], user_lng=CASA_ZERKTOUNI[1]).get_json()["data"]
+        assert data["destination"]["landmark_id"] == nearest_id(
+            fixture_places("casablanca", "mosque"), CASA_ZERKTOUNI)
+        assert data["ready_for_yassir"] is True
+        assert data["yassir_request"]["pickup"] == {
+            "type": "current_location", "lat": CASA_ZERKTOUNI[0], "lng": CASA_ZERKTOUNI[1]}
+
+    def test_category_without_location_asks_for_it(self, client):
+        data = post_command(client, darija_text="bghit taxi l jamaa", city="casablanca").get_json()["data"]
+        assert data["ready_for_yassir"] is False
+        assert data["missing_fields"] == ["user_location"]
+        assert data["unresolved_places"][0]["category"] == "mosque"
+
+    def test_city_inferred_from_user_location(self, client):
+        data = post_command(client, darija_text="waslni l farmasyan",
+                            user_lat=CASA_ZERKTOUNI[0], user_lng=CASA_ZERKTOUNI[1]).get_json()["data"]
+        assert data["city"] == "casablanca"
+        assert data["destination"]["category"] == "pharmacy"
+
+    @pytest.mark.parametrize("payload", [
+        {"user_lat": 33.58},
+        {"user_lat": "abc", "user_lng": -7.6},
+        {"user_lat": 48.85, "user_lng": 2.35},
+    ])
+    def test_invalid_user_location(self, client, payload):
+        res = client.post("/wassal/command", json={"darija_text": "bghit taxi", **payload})
+        assert res.status_code == 400
+        assert res.get_json()["error"]["code"] == "INVALID_LOCATION"
 
     def test_taxi_without_destination_not_ready(self, client):
         data = post_command(client, darija_text="bghit taxi", city="casablanca").get_json()["data"]
@@ -482,7 +638,8 @@ class TestApi:
         assert res.get_json()["error"]["code"] == "MISSING_FIELDS"
 
     def test_crowdsource_requires_token_when_configured(self, tmp_path):
-        app = create_app({"TESTING": True, "LANDMARKS_STORE": str(tmp_path / "l.json"), "API_TOKEN": "s3cret"})
+        app = create_app({"TESTING": True, "LANDMARKS_STORE": str(tmp_path / "l.json"),
+                          "OSM_DATA_DIR": "", "API_TOKEN": "s3cret"})
         client = app.test_client()
         payload = {"name": "Café Test", "city": "casablanca", "lat": 33.59, "lng": -7.61}
         assert client.post("/wassal/landmarks", json=payload).status_code == 401
