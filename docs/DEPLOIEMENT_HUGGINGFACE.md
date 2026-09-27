@@ -1,10 +1,12 @@
 # Mettre Wassal en ligne sur Hugging Face Spaces (avec la voix)
 
+> ⚠️ **Payant.** Le 27/09/2026, la création du Space a été refusée avec l'erreur *« hosting Gradio and Docker Spaces on free cpu-basic requires a PRO subscription »*. Il faut donc l'abonnement [Hugging Face PRO](https://huggingface.co/pro). L'équipe a choisi pour l'instant l'hébergement **gratuit sans la voix** : voir [DEPLOIEMENT_RENDER.md](DEPLOIEMENT_RENDER.md). Ce guide reste valable si vous prenez PRO plus tard. Le `Dockerfile` a été testé en local.
+
 Résultat : un lien public en HTTPS, du type `https://<votre-compte>-wassal.hf.space`, où le jury peut parler ou taper une commande en Darija.
 
 **Pourquoi Hugging Face :**
 - MoulSot y est déjà hébergé ;
-- le matériel gratuit a assez de mémoire pour charger le modèle ;
+- le matériel CPU basic (inclus avec PRO) a assez de mémoire pour charger le modèle ;
 - le HTTPS est fourni, et il est indispensable pour le micro et le bouton 📍.
 
 > Les limites du matériel gratuit changent de temps en temps (mémoire, mise en veille). Vérifiez sur https://huggingface.co/pricing#spaces avant le jour de la démo.
@@ -34,7 +36,7 @@ La branche `deploy/huggingface-space` doit être **mergée dans `main`**, car le
 2. Allez sur https://huggingface.co/new-space et remplissez :
    - **Space name :** `wassal`
    - **SDK :** **Docker**, puis le modèle **Blank**
-   - **Hardware :** **CPU basic** (gratuit)
+   - **Hardware :** **CPU basic** (nécessite PRO)
    - **Visibility :** **Public**, pour que le jury puisse l'ouvrir
 3. Cliquez sur **Create Space**.
 

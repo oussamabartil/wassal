@@ -1,0 +1,11 @@
+# Wassal - hébergement SANS la voix (ex. Render gratuit, 512 Mo de RAM).
+# Commandes tapées, 11 000 lieux OpenStreetMap et dispatch simulé : ~70 Mo de RAM.
+# Pas de qwen-asr / torch : l'API renvoie MODEL_UNAVAILABLE pour l'audio et
+# l'interface désactive le micro.
+# Garder ces versions alignées avec requirements.txt.
+
+flask>=3.0,<4.0
+flask-cors>=4.0,<7.0
+python-dotenv>=1.0,<2.0
+requests>=2.31,<3.0
+gunicorn==26.2.0

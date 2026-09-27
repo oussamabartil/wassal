@@ -1,0 +1,23 @@
+# Blueprint Render : Wassal en ligne, gratuitement, sans la voix.
+# Render lit ce fichier via "New > Blueprint" (voir docs/DEPLOIEMENT_RENDER.md)
+# et redéploie automatiquement à chaque push sur main.
+services:
+  - type: web
+    name: wassal
+    runtime: python
+    plan: free
+    branch: main
+    buildCommand: pip install -r requirements-server.txt
+    # 1 worker suffit (512 Mo de RAM) ; des threads pour servir plusieurs testeurs.
+    startCommand: gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 60 --access-logfile - "src.api:create_app()"
+    healthCheckPath: /wassal/test
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: FLASK_ENV
+        value: production
+      - key: PRELOAD_MODEL
+        value: "false"
+      # Mot de passe aléatoire généré par Render : protège POST /wassal/landmarks.
+      - key: WASSAL_API_TOKEN
+        generateValue: true
