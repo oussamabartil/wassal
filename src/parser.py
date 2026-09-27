@@ -25,12 +25,18 @@ logger = logging.getLogger(__name__)
 # Dictionnaires Darija / Darija dictionaries
 # ---------------------------------------------------------------------------
 
-# Services supportés : (service_type, subtype) + mots-clés pondérés.
+# Services supportés, alignés sur l'offre Yassir au Maroc (yassir.com/morocco) :
+#   taxi   -> Yassir Go     (VTC)
+#   food   -> Yassir Food   (repas de restaurant)
+#   market -> Yassir Market (courses : pain, lait, épicerie...)
+#   package -> colis : pas listé dans l'offre Yassir Maroc -> product None,
+#              gardé comme extension possible (Yassir Express existe ailleurs).
 # Weight guide: 3 = explicit service word, 2 = strong hint, 1 = weak hint.
 SERVICES: Dict[str, Dict[str, Any]] = {
     "taxi": {
         "service_type": "ride",
         "subtype": "taxi",
+        "product": "Yassir Go",
         "keywords": {
             3.0: ["taxi", "taksi", "petit taxi", "grand taxi", "تاكسي", "طاكسي", "درايفر",
                   "driver", "chauffeur", "vtc", "voiture", "tomobil", "طوموبيل", "طونوبيل"],
@@ -42,18 +48,32 @@ SERVICES: Dict[str, Dict[str, Any]] = {
     "food": {
         "service_type": "delivery",
         "subtype": "food",
+        "product": "Yassir Food",
         "keywords": {
-            3.0: ["makla", "mekla", "ماكلة", "أكل", "ماكله", "restaurant", "resto", "ريسطو",
-                  "livraison repas", "commande food"],
-            2.0: ["chri lia", "chri liya", "شري ليا", "hanout", "7anout", "حانوت", "marché",
-                  "souk", "سوق", "courses", "طلبية", "tlabiya"],
+            3.0: ["makla", "mekla", "ماكلة", "ماكله", "أكل", "restaurant", "resto", "ريسطو",
+                  "livraison repas", "snack", "سناك", "mcdo", "kfc"],
+            1.5: ["faim", "ji3an", "جيعان", "ghda", "غدا", "3cha", "عشا", "ftour", "فطور"],
+            1.0: ["jib", "jibli", "jib lia", "jib liya", "جيب", "جيب ليا", "طلبية", "tlabiya",
+                  "commande"],
+        },
+    },
+    "market": {
+        "service_type": "delivery",
+        "subtype": "market",
+        "product": "Yassir Market",
+        "keywords": {
+            3.0: ["hanout", "7anout", "حانوت", "épicerie", "epicerie", "supermarché", "marjane",
+                  "carrefour", "bim", "acima", "courses"],
+            2.0: ["chri lia", "chri liya", "شري ليا", "marché", "souk", "سوق", "mahlaba",
+                  "محلبة", "moul l7anout", "مول الحانوت"],
             1.0: ["jib", "jibli", "jib lia", "jib liya", "جيب", "جيب ليا", "chri", "شري",
-                  "kolchi", "koulchi", "كلشي", "commande", "faim", "ji3an", "جيعان"],
+                  "kolchi", "koulchi", "كلشي", "طلبية", "tlabiya", "commande"],
         },
     },
     "package": {
         "service_type": "delivery",
         "subtype": "package",
+        "product": None,
         "keywords": {
             3.0: ["package", "colis", "koli", "كولي", "طرد", "parcel", "enveloppe", "ظرف",
                   "sift", "sifet", "صيفط", "siftli", "صيفط ليا", "sayfet"],
@@ -65,9 +85,20 @@ SERVICES: Dict[str, Dict[str, Any]] = {
     },
 }
 
-# Articles alimentaires -> nom canonique (anglais, comme l'API Yassir).
-# Food items -> canonical English name.
-FOOD_ITEMS: Dict[str, List[str]] = {
+# Articles -> nom canonique (anglais). Chaque article oriente vers un service :
+#   "market" = courses (Yassir Market), "food" = plat de restaurant (Yassir Food),
+#   "drink"  = neutre (se commande dans les deux).
+# Items -> canonical English name, grouped by the service they point to.
+ITEM_CATEGORY: Dict[str, str] = {
+    "bread": "market", "milk": "market", "tea": "market", "sugar": "market", "eggs": "market",
+    "oil": "market", "cheese": "market", "coffee": "market", "yogurt": "market",
+    "chicken": "market", "meat": "market", "vegetables": "market", "fruits": "market",
+    "pizza": "food", "tacos": "food", "burger": "food", "msemen": "food", "harira": "food",
+    "tajine": "food", "sandwich": "food", "couscous": "food",
+    "water": "market", "soda": "drink", "juice": "drink",
+}
+
+ITEMS: Dict[str, List[str]] = {
     "bread": ["khobz", "khubz", "5obz", "kh0bz", "خبز", "pain", "baguette", "بكيط"],
     "milk": ["7lib", "hlib", "حليب", "lait"],
     "tea": ["atay", "atai", "ataye", "أتاي", "اتاي", "thé", "the"],
@@ -87,6 +118,9 @@ FOOD_ITEMS: Dict[str, List[str]] = {
     "burger": ["burger", "hamburger", "برݣر", "بركر"],
     "msemen": ["msemen", "msmen", "مسمن", "rghaif", "رغايف"],
     "harira": ["harira", "7rira", "حريرة", "حريره"],
+    "tajine": ["tajine", "tajin", "طاجين"],
+    "sandwich": ["sandwich", "sandwitch", "صندويتش", "panini"],
+    "couscous": ["couscous", "kesksou", "سكسو", "كسكس"],
     "soda": ["coca", "كوكا", "pepsi", "fanta", "hawai"],
     "juice": ["3asir", "asir", "عصير", "jus"],
 }
@@ -113,7 +147,7 @@ URGENCY: Dict[str, List[str]] = {
 }
 
 # Service inconnu / fallback when nothing matched.
-UNKNOWN_SERVICE = {"service_type": "unknown", "subtype": None}
+UNKNOWN_SERVICE = {"service_type": "unknown", "subtype": None, "yassir_product": None}
 
 MAX_TEXT_LENGTH = 500
 
@@ -130,7 +164,7 @@ _SERVICE_PATTERNS: Dict[str, List[Tuple[float, str, Pattern[str]]]] = {
     ]
     for name, spec in SERVICES.items()
 }
-_FOOD_PATTERNS = build_lookup(FOOD_ITEMS)
+_ITEM_PATTERNS = build_lookup(ITEMS)
 _URGENCY_PATTERNS = build_lookup(URGENCY)
 _NUMBERS_NORM = {normalize_text(k): v for k, v in NUMBERS.items()}
 
@@ -164,12 +198,12 @@ def _score_services(norm: str) -> Tuple[Dict[str, float], Dict[str, List[str]]]:
 
 def _extract_items(norm: str) -> List[Dict[str, Any]]:
     """
-    Extrait les articles alimentaires et leur quantité.
-    Extract food items with an optional preceding quantity ("joj khobz", "2 7lib").
+    Extrait les articles, leur quantité et leur catégorie (market/food/drink).
+    Extract items with an optional preceding quantity ("joj khobz", "2 7lib").
     Items are returned in the order they appear in the text.
     """
     found: List[Tuple[int, Dict[str, Any]]] = []
-    for item, patterns in _FOOD_PATTERNS.items():
+    for item, patterns in _ITEM_PATTERNS.items():
         for pattern in patterns:
             m = pattern.search(norm)
             if not m:
@@ -182,7 +216,9 @@ def _extract_items(norm: str) -> List[Dict[str, Any]]:
                     quantity = int(prev)
                 elif prev in _NUMBERS_NORM:
                     quantity = _NUMBERS_NORM[prev]
-            found.append((m.start(), {"name": item, "quantity": quantity, "raw": m.group(0)}))
+            found.append((m.start(), {
+                "name": item, "quantity": quantity, "raw": m.group(0), "category": ITEM_CATEGORY[item],
+            }))
             break
     found.sort(key=lambda pair: pair[0])
     return [details for _, details in found]
@@ -222,11 +258,12 @@ def parse_darija_command(text: str) -> Dict[str, Any]:
     Returns:
         {
           "service_type": "ride" | "delivery" | "unknown",
-          "subtype": "taxi" | "food" | "package" | None,
+          "subtype": "taxi" | "food" | "market" | "package" | None,
+          "yassir_product": "Yassir Go" | "Yassir Food" | "Yassir Market" | None,
           "urgency": "normal" | "quick" | "urgent",
           "confidence": float 0..1,
-          "items": ["bread", "milk"],          # food only
-          "item_details": [{"name", "quantity", "raw"}],
+          "items": ["bread", "milk"],          # food / market only
+          "item_details": [{"name", "quantity", "raw", "category"}],
           "matched_keywords": [...],
           "language": "darija" | "darija_latin" | "french" | "mixed" | "unknown",
           "normalized_text": str,
@@ -247,11 +284,14 @@ def parse_darija_command(text: str) -> Dict[str, Any]:
     scores, matched = _score_services(norm)
     items = _extract_items(norm)
 
-    # Chaque article alimentaire renforce le service "food".
-    # Each recognized food item is a strong food signal.
-    if items:
-        scores["food"] += 2.0 * len(items)
-        matched["food"].extend(i["raw"] for i in items)
+    # Chaque article oriente vers son service : courses -> market, plat -> food.
+    # Une boisson se commande dans les deux, elle compte à moitié pour chacun.
+    # Each item is a strong signal for its own service; drinks count for both.
+    for item in items:
+        targets = ("food", "market") if item["category"] == "drink" else (item["category"],)
+        for target in targets:
+            scores[target] += 1.0 if item["category"] == "drink" else 2.0
+            matched[target].append(item["raw"])
 
     ranking = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
     best_name, best_score = ranking[0]
@@ -261,8 +301,15 @@ def parse_darija_command(text: str) -> Dict[str, Any]:
         service = dict(UNKNOWN_SERVICE)
         keywords: List[str] = []
     else:
-        service = {"service_type": SERVICES[best_name]["service_type"], "subtype": SERVICES[best_name]["subtype"]}
+        spec = SERVICES[best_name]
+        service = {"service_type": spec["service_type"], "subtype": spec["subtype"], "yassir_product": spec["product"]}
         keywords = matched[best_name]
+
+    # On ne garde que les articles du service retenu (et les boissons).
+    kept_items = [
+        i for i in items
+        if service["subtype"] in ("food", "market") and i["category"] in (service["subtype"], "drink")
+    ]
 
     urgency, urgency_word = _detect_urgency(norm)
     if urgency_word:
@@ -272,8 +319,8 @@ def parse_darija_command(text: str) -> Dict[str, Any]:
         **service,
         "urgency": urgency,
         "confidence": _confidence(best_score, second_score),
-        "items": [i["name"] for i in items] if service["subtype"] == "food" else [],
-        "item_details": items if service["subtype"] == "food" else [],
+        "items": [i["name"] for i in kept_items],
+        "item_details": kept_items,
         "matched_keywords": keywords,
         "language": detect_language(text),
         "normalized_text": norm,

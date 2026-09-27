@@ -12,10 +12,14 @@
 
 | Entrée | Sortie |
 |---|---|
-| `بغيت تاكسي للقارة` (Casablanca) | `ride / taxi` → Gare Casa-Voyageurs `33.5894, -7.5906` |
-| `jib lia khobz o 7lib` | `delivery / food`, items `["bread", "milk"]` |
-| `waslni package ldjamaa fasa` (Fès) | `delivery / package` → Médina Fès, urgence `urgent` |
-| `taxi derrière la mosquée` (Casablanca) | `ride / taxi` → *derrière* Mosquée Hassan II |
+| `بغيت تاكسي للقارة` (Casablanca) | **Yassir Go** → Gare Casa-Voyageurs `33.5894, -7.5906` |
+| `jib lia khobz o 7lib` | **Yassir Market**, items `["bread", "milk"]` |
+| `bghit tajine mn resto fasa` | **Yassir Food**, items `["tajine"]`, urgence `urgent` |
+| `taxi derrière la mosquée` (Casablanca) | **Yassir Go** → *derrière* Mosquée Hassan II |
+
+Les services suivent l'offre de Yassir au Maroc : Go (VTC), Food (restaurants) et Market (courses). La livraison de colis est détectée, mais signalée comme hors de cette offre.
+
+📖 Explication détaillée, exemples réels et limites : [docs/COMMENT_CA_MARCHE.md](docs/COMMENT_CA_MARCHE.md)
 
 ---
 
@@ -68,6 +72,7 @@ wassal/
 │   ├── normalize.py    # Normalisation arabe / arabizi / français partagée
 │   └── api.py          # Serveur Flask (CORS, validation, erreurs JSON standardisées)
 ├── frontend/index.html # Interface web mobile-friendly (servie sur /)
+├── docs/COMMENT_CA_MARCHE.md  # Fonctionnement détaillé + limites + mesures à faire
 ├── tests/test_commands.py
 ├── .env.example
 └── requirements.txt
@@ -112,6 +117,7 @@ Health check : version, état du modèle ASR, nombre de repères, villes support
 {
   "service_type": "ride",
   "subtype": "taxi",
+  "yassir_product": "Yassir Go",
   "destination": {
     "lat": 33.5894, "lng": -7.5906,
     "place": "Gare Casa-Voyageurs", "place_name": "Gare Casa-Voyageurs",
@@ -127,7 +133,7 @@ Health check : version, état du modèle ASR, nombre de repères, villes support
   "warnings": [],
   "language": "darija",
   "yassir_request": {
-    "service": "ride", "category": "taxi",
+    "service": "ride", "category": "taxi", "product": "Yassir Go",
     "pickup":  { "type": "current_location" },
     "dropoff": { "type": "landmark", "lat": 33.5894, "lng": -7.5906, "label": "Gare Casa-Voyageurs" },
     "priority": "normal",
@@ -137,7 +143,7 @@ Health check : version, état du modèle ASR, nombre de repères, villes support
 }
 ```
 
-`ready_for_yassir` est `true` quand le service est identifié, que les champs nécessaires sont présents (destination pour taxi/colis, articles pour la nourriture) et que la confiance dépasse `MIN_CONFIDENCE` (0.6 par défaut). Sinon, `missing_fields` et `warnings` expliquent pourquoi, pour que l'app puisse poser une question de relance.
+`ready_for_yassir` est `true` quand le service est identifié, que les champs nécessaires sont présents (destination pour taxi/colis, articles ou destination pour Food/Market) et que la confiance dépasse `MIN_CONFIDENCE` (0.6 par défaut). Sinon, `missing_fields` et `warnings` expliquent pourquoi, pour que l'app puisse poser une question de relance.
 
 `yassir_request` est le **contrat d'intégration proposé**. Il faudra l'aligner sur l'API partenaire de Yassir.
 
@@ -167,11 +173,14 @@ La Darija s'écrit de trois façons, souvent mélangées : alphabet arabe (`بغ
 
 Chaque service a un dictionnaire de mots-clés pondérés :
 
-| Poids | Signification | Exemples |
-|---|---|---|
-| 3 | mot explicite | `taxi`, `تاكسي`, `درايفر`, `colis`, `طرد`, `makla` |
-| 2 | indice fort | `hezni`, `diini`, `hanout`, `طلبية`, chaque article alimentaire |
-| 1-1.5 | indice faible | `waslni`, `jib`, `kolchi`, `7aja` |
+| Service | Produit Yassir | Poids 3 (explicite) | Indices (1 à 2) |
+|---|---|---|---|
+| `taxi` | Yassir Go | `taxi`, `تاكسي`, `درايفر` | `hezni`, `diini`, `waslni` |
+| `food` | Yassir Food | `makla`, `ماكلة`, `resto`, `snack` | `ji3an`, `ghda`, `jib lia` |
+| `market` | Yassir Market | `hanout`, `حانوت`, `courses`, `marjane` | `chri lia`, `souk`, `kolchi` |
+| `package` | — | `colis`, `طرد`, `sift` | `wra9`, `7aja` |
+
+Chaque article ajoute +2 à son service : les courses (`khobz`, `7lib`, `zit`…) vont vers Market, les plats (`pizza`, `tajine`, `harira`…) vers Food. Les boissons (`coca`, `jus`) ajoutent +1 aux deux.
 
 La confiance combine la force du signal et l'écart avec le deuxième service. `waslni` seul veut dire "emmène-moi" (course), mais `waslni package` devient une livraison de colis.
 
@@ -218,7 +227,7 @@ python src/transcribe.py commande.wav
 
 ## Ajouter des mots ou des repères
 
-- **Nouveau mot Darija :** ajoutez-le dans `SERVICES`, `FOOD_ITEMS` ou `URGENCY` dans [src/parser.py](src/parser.py), puis un cas dans `tests/test_commands.py`.
+- **Nouveau mot Darija :** ajoutez-le dans `SERVICES`, `ITEMS` (+ `ITEM_CATEGORY`) ou `URGENCY` dans [src/parser.py](src/parser.py), puis un cas dans `tests/test_commands.py`.
 - **Nouveau repère curé :** ajoutez une entrée à `DEFAULT_LANDMARKS` dans [src/landmarks.py](src/landmarks.py) (coordonnées vérifiées sur OpenStreetMap).
 - **Nouvelle ville :** ajoutez-la dans `CITIES` avec son centre et ses alias.
 

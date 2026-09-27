@@ -90,9 +90,11 @@ class TestParser:
         assert r["urgency"] == "normal"
         assert r["confidence"] >= 0.9
 
-    def test_example_food(self):
+    def test_example_groceries_go_to_market(self):
+        # Pain + lait = courses -> Yassir Market (pas Yassir Food, réservé aux restaurants).
         r = parse_darija_command("jib lia khobz o 7lib")
-        assert (r["service_type"], r["subtype"]) == ("delivery", "food")
+        assert (r["service_type"], r["subtype"]) == ("delivery", "market")
+        assert r["yassir_product"] == "Yassir Market"
         assert r["items"] == ["bread", "milk"]
         assert r["urgency"] == "normal"
         assert r["confidence"] >= 0.85
@@ -111,11 +113,32 @@ class TestParser:
         assert parse_darija_command(text)["subtype"] == "taxi"
 
     @pytest.mark.parametrize("text", [
-        "jib lia kolchi mn hanout", "بغيت طلبية ديال الماكلة", "جيب ليا خبز و حليب",
-        "bghit pizza", "chri lia atay o sokar",
+        "بغيت طلبية ديال الماكلة", "bghit pizza", "bghit tajine mn resto", "جيعان بغيت ماكلة",
+        "jib lia pizza o coca",
     ])
     def test_food_variants(self, text):
-        assert parse_darija_command(text)["subtype"] == "food"
+        r = parse_darija_command(text)
+        assert r["subtype"] == "food"
+        assert r["yassir_product"] == "Yassir Food"
+
+    @pytest.mark.parametrize("text", [
+        "jib lia kolchi mn hanout", "جيب ليا خبز و حليب", "chri lia atay o sokar", "jib lia lma",
+        "bghit courses mn marjane",
+    ])
+    def test_market_variants(self, text):
+        r = parse_darija_command(text)
+        assert r["subtype"] == "market"
+        assert r["yassir_product"] == "Yassir Market"
+
+    def test_drink_is_kept_with_meal(self):
+        r = parse_darija_command("jib lia pizza o coca")
+        assert r["items"] == ["pizza", "soda"]
+
+    def test_products(self):
+        assert parse_darija_command("bghit taxi")["yassir_product"] == "Yassir Go"
+        # Colis : pas dans l'offre Yassir Maroc.
+        assert parse_darija_command("sift colis")["yassir_product"] is None
+        assert parse_darija_command("salam")["yassir_product"] is None
 
     @pytest.mark.parametrize("text", [
         "sift had colis l khouya", "عندي طرد بغيت نصيفطو", "waslni had l package",
@@ -365,9 +388,10 @@ class TestApi:
         # L'arabe reste lisible dans le JSON (pas de \uXXXX).
         assert "بغيت" in res.get_data(as_text=True)
 
-    def test_food_command_ready_without_destination(self, client):
+    def test_market_command_ready_without_destination(self, client):
         data = post_command(client, darija_text="jib lia khobz o 7lib", city="casablanca").get_json()["data"]
-        assert data["subtype"] == "food"
+        assert data["subtype"] == "market"
+        assert data["yassir_request"]["product"] == "Yassir Market"
         assert data["items"] == ["bread", "milk"]
         assert data["ready_for_yassir"] is True
         assert data["yassir_request"]["dropoff"] == {"type": "current_location"}
@@ -378,6 +402,7 @@ class TestApi:
         assert data["urgency"] == "urgent"
         assert data["destination"]["city"] == "fes"
         assert data["ready_for_yassir"] is True
+        assert any("not listed in Yassir's Morocco offer" in w for w in data["warnings"])
 
     def test_taxi_without_destination_not_ready(self, client):
         data = post_command(client, darija_text="bghit taxi", city="casablanca").get_json()["data"]

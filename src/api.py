@@ -125,13 +125,14 @@ def build_yassir_request(result: Dict[str, Any], phone: Optional[str]) -> Dict[s
     payload: Dict[str, Any] = {
         "service": result["service_type"],
         "category": result["subtype"],
+        "product": result["yassir_product"],
         "pickup": pickup,
         "dropoff": dropoff,
         "priority": result["urgency"],
         "customer": {"phone": phone},
         "source": "wassal_voice",
     }
-    if result["subtype"] == "food":
+    if result["subtype"] in ("food", "market"):
         payload["items"] = [{"name": i["name"], "quantity": i["quantity"]} for i in result["item_details"]]
     return payload
 
@@ -154,7 +155,7 @@ def process_command(text: str, city: Optional[str], phone: Optional[str],
         missing.append("service_type")
     if subtype in ("taxi", "package") and not destination:
         missing.append("destination")
-    if subtype == "food" and not parsed["items"] and not destination:
+    if subtype in ("food", "market") and not parsed["items"] and not destination:
         missing.append("items")
 
     # Confiance globale = intention x adresse (si une adresse est utilisée).
@@ -168,6 +169,8 @@ def process_command(text: str, city: Optional[str], phone: Optional[str],
                 warnings.append(f"{label} is uncertain ('{point['place_name']}'), please confirm")
     confidence = round(confidence, 2)
 
+    if subtype == "package":
+        warnings.append("package delivery is not listed in Yassir's Morocco offer (Go, Food, Market)")
     if not city and (destination or pickup):
         warnings.append("no city provided; landmark resolved from text or best guess")
     if confidence < min_confidence and not missing:
@@ -177,6 +180,7 @@ def process_command(text: str, city: Optional[str], phone: Optional[str],
     result: Dict[str, Any] = {
         "service_type": parsed["service_type"],
         "subtype": subtype,
+        "yassir_product": parsed["yassir_product"],
         "destination": destination,
         "pickup": pickup,
         "items": parsed["items"],
