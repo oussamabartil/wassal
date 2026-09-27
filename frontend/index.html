@@ -214,6 +214,15 @@
       </div>
       <div class="summary" id="summary"></div>
       <ul class="notes" id="notes" hidden></ul>
+
+      <div class="actions" id="dispatchRow" hidden>
+        <button class="primary" type="button" id="dispatchBtn">Envoyer à Yassir →</button>
+        <span class="kbd">Simulation : aucun appel réel à l'API Yassir</span>
+      </div>
+      <div class="card" id="dispatchCard" hidden style="margin-top:14px; background:var(--ok-soft); border-color:var(--ok);">
+        <div class="summary" id="dispatchSummary"></div>
+      </div>
+
       <div class="json-head">
         <span>JSON Yassir</span>
         <button type="button" class="ghost" id="copyBtn">Copier</button>
@@ -313,6 +322,8 @@
       );
     }
 
+    let currentYassirRequest = null;
+
     function renderResult(body, httpStatus) {
       $("resultCard").hidden = false;
       $("jsonOutput").textContent = JSON.stringify(body, null, 2);
@@ -321,6 +332,9 @@
       summary.replaceChildren();
       notes.replaceChildren();
       const badge = $("readyBadge");
+      $("dispatchRow").hidden = true;
+      $("dispatchCard").hidden = true;
+      currentYassirRequest = null;
 
       if (!body.success) {
         badge.className = "badge err";
@@ -333,6 +347,12 @@
       const d = body.data;
       badge.className = "badge " + (d.ready_for_yassir ? "ok" : "warn");
       badge.textContent = d.ready_for_yassir ? "✓ Prêt pour Yassir" : "Informations manquantes";
+      if (d.ready_for_yassir && d.yassir_request) {
+        currentYassirRequest = d.yassir_request;
+        $("dispatchRow").hidden = false;
+        $("dispatchBtn").disabled = false;
+        $("dispatchBtn").textContent = "Envoyer à Yassir →";
+      }
 
       summary.append(
         stat("Service", SERVICE_LABELS[d.subtype] || "Non reconnu"),
@@ -414,7 +434,45 @@
       }
     }
 
+    async function dispatchToYassir() {
+      if (!currentYassirRequest) return;
+      const btn = $("dispatchBtn");
+      btn.disabled = true;
+      btn.textContent = "Envoi…";
+      try {
+        const res = await fetch(`${API_BASE}/wassal/dispatch`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ yassir_request: currentYassirRequest }),
+        });
+        const body = await res.json();
+        const box = $("dispatchSummary");
+        box.replaceChildren();
+        if (!body.success) {
+          box.appendChild(stat("Erreur", body.error ? body.error.message : "Échec de l'envoi"));
+        } else {
+          const d = body.data;
+          const person = d.driver || d.courier;
+          box.append(
+            stat("Statut", "✓ Commande envoyée (simulation)"),
+            stat("N° commande", d.order_id),
+            stat("ETA", `${d.eta_minutes} min`),
+          );
+          if (person) box.appendChild(stat(d.driver ? "Chauffeur" : "Livreur", `${person.name} · ${person.vehicle}`));
+        }
+        $("dispatchCard").hidden = false;
+        btn.textContent = "Renvoyer";
+      } catch (err) {
+        $("dispatchSummary").replaceChildren(stat("Erreur", `Impossible de joindre l'API (${API_BASE || location.origin})`));
+        $("dispatchCard").hidden = false;
+        btn.textContent = "Réessayer";
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
     form.addEventListener("submit", submit);
+    $("dispatchBtn").addEventListener("click", dispatchToYassir);
     $("locBtn").addEventListener("click", locate);
     $("darijaText").addEventListener("keydown", (e) => {
       if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) form.requestSubmit();

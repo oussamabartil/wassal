@@ -12,6 +12,7 @@ the best one wins and its margin over the runner-up drives the confidence.
 """
 
 import logging
+import re
 from typing import Any, Dict, List, Optional, Pattern, Tuple
 
 try:  # Package import (python -m, pytest) / import en tant que package
@@ -151,6 +152,19 @@ UNKNOWN_SERVICE = {"service_type": "unknown", "subtype": None, "yassir_product":
 
 MAX_TEXT_LENGTH = 500
 
+# Négation : "ma bghitch taxi" ne doit pas compter comme une demande de taxi.
+# Darija negation wraps the verb ("ma ... ch/chi"), and the negated word
+# usually follows right after, hence the char window past the trigger.
+_NEGATION_RE = re.compile(
+    r"(?<!\S)(?:"
+    r"ma\s+\w*(?:ch|chi|ches)(?!\S)"  # ma bghitch / ma bghitich
+    r"|machi|mashi|ماشي"
+    r"|ما\s+\S*ش(?!\S)"  # ما بغيتش
+    r"|\bbla\b|بلا|walou|ولو"
+    r")"
+)
+_NEXT_TOKEN_RE = re.compile(r"\S+")
+
 # ---------------------------------------------------------------------------
 # Compilation des regex (une seule fois au chargement du module)
 # Pre-compiled patterns (built once at import time)
@@ -169,12 +183,30 @@ _URGENCY_PATTERNS = build_lookup(URGENCY)
 _NUMBERS_NORM = {normalize_text(k): v for k, v in NUMBERS.items()}
 
 
-def _score_services(norm: str) -> Tuple[Dict[str, float], Dict[str, List[str]]]:
+def _negation_zones(norm: str) -> List[Tuple[int, int]]:
+    """
+    Portions du texte négatives : seul le mot qui suit directement la négation
+    est couvert ("ma bghitch [taxi]"), pas le reste de la phrase, pour ne pas
+    aussi annuler une intention positive plus loin ("... bghit tajine").
+    """
+    zones = []
+    for m in _NEGATION_RE.finditer(norm):
+        following = _NEXT_TOKEN_RE.search(norm, m.end())
+        zones.append((m.start(), following.end() if following else m.end()))
+    return zones
+
+
+def _negated(pos: int, zones: List[Tuple[int, int]]) -> bool:
+    return any(start <= pos < end for start, end in zones)
+
+
+def _score_services(norm: str, zones: List[Tuple[int, int]]) -> Tuple[Dict[str, float], Dict[str, List[str]]]:
     """
     Calcule le score de chaque service.
     Score every service; a keyword counts once, and a phrase that contains a
     shorter keyword ("bghit taxi" ⊃ "taxi") only counts the phrase weight
-    once per matched span.
+    once per matched span. A keyword inside a negated zone ("ma bghitch
+    taxi") does not count at all.
     """
     scores: Dict[str, float] = {}
     matched: Dict[str, List[str]] = {}
@@ -188,6 +220,8 @@ def _score_services(norm: str) -> Tuple[Dict[str, float], Dict[str, List[str]]]:
                 if any(m.start() < end and start < m.end() for start, end in taken):
                     continue
                 taken.append((m.start(), m.end()))
+                if _negated(m.start(), zones):
+                    continue
                 score += weight
                 hits.append(term)
                 break  # count each keyword once
@@ -196,17 +230,18 @@ def _score_services(norm: str) -> Tuple[Dict[str, float], Dict[str, List[str]]]:
     return scores, matched
 
 
-def _extract_items(norm: str) -> List[Dict[str, Any]]:
+def _extract_items(norm: str, zones: List[Tuple[int, int]]) -> List[Dict[str, Any]]:
     """
     Extrait les articles, leur quantité et leur catégorie (market/food/drink).
     Extract items with an optional preceding quantity ("joj khobz", "2 7lib").
-    Items are returned in the order they appear in the text.
+    Items are returned in the order they appear in the text. A negated item
+    ("ma bghitch khobz") is skipped.
     """
     found: List[Tuple[int, Dict[str, Any]]] = []
     for item, patterns in _ITEM_PATTERNS.items():
         for pattern in patterns:
             m = pattern.search(norm)
-            if not m:
+            if not m or _negated(m.start(), zones):
                 continue
             quantity = 1
             before = norm[: m.start()].split()
@@ -281,8 +316,9 @@ def parse_darija_command(text: str) -> Dict[str, Any]:
         raise ValueError(f"text exceeds {MAX_TEXT_LENGTH} characters")
 
     norm = normalize_text(text)
-    scores, matched = _score_services(norm)
-    items = _extract_items(norm)
+    zones = _negation_zones(norm)
+    scores, matched = _score_services(norm, zones)
+    items = _extract_items(norm, zones)
 
     # Chaque article oriente vers son service : courses -> market, plat -> food.
     # Une boisson se commande dans les deux, elle compte à moitié pour chacun.
@@ -324,6 +360,7 @@ def parse_darija_command(text: str) -> Dict[str, Any]:
         "matched_keywords": keywords,
         "language": detect_language(text),
         "normalized_text": norm,
+        "negation_detected": bool(zones),
     }
     logger.debug("Parsed %r -> %s (scores=%s)", text, result["subtype"], scores)
     return result

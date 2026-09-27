@@ -15,6 +15,7 @@ Lancer / run:
 
 import logging
 import os
+import random
 import re
 import sys
 import tempfile
@@ -37,7 +38,7 @@ from werkzeug.exceptions import HTTPException  # noqa: E402
 from werkzeug.utils import secure_filename  # noqa: E402
 
 from src import __version__  # noqa: E402
-from src.landmarks import MOROCCO_BBOX, LandmarkResolver  # noqa: E402
+from src.landmarks import MOROCCO_BBOX, LandmarkResolver, haversine_km  # noqa: E402
 from src.parser import MAX_TEXT_LENGTH, parse_darija_command  # noqa: E402
 from src.transcribe import DEFAULT_MODEL, SUPPORTED_EXTENSIONS, is_model_loaded, transcribe_darija_audio  # noqa: E402
 
@@ -52,6 +53,14 @@ _PHONE_RE = re.compile(r"^(?:\+212|00212|0)([5-7]\d{8})$")
 
 # Codes d'erreur HTTP de transcription / transcription error -> HTTP status.
 _TRANSCRIPTION_STATUS = {"MODEL_UNAVAILABLE": 503, "INFERENCE_ERROR": 500}
+
+# Chauffeurs/livreurs factices pour la simulation /wassal/dispatch (aucun appel réel à Yassir).
+_MOCK_COURIERS = [
+    {"name": "Youssef B.", "vehicle": "Dacia Logan blanche", "plate": "12345-A-6"},
+    {"name": "Karim T.", "vehicle": "Renault Clio grise", "plate": "45210-B-3"},
+    {"name": "Hamza E.", "vehicle": "Peugeot 208 bleue", "plate": "78542-A-9"},
+    {"name": "Salma R.", "vehicle": "Dacia Sandero rouge", "plate": "36201-D-5"},
+]
 
 
 class ApiError(Exception):
@@ -160,6 +169,19 @@ def build_yassir_request(result: Dict[str, Any], phone: Optional[str],
     if result["subtype"] in ("food", "market"):
         payload["items"] = [{"name": i["name"], "quantity": i["quantity"]} for i in result["item_details"]]
     return payload
+
+
+def estimate_eta_minutes(yassir_request: Dict[str, Any]) -> int:
+    """
+    ETA factice pour la simulation de dispatch : à partir de la distance
+    pickup -> dropoff si connue (25 km/h de moyenne en ville + 3 min de base),
+    sinon une fourchette plausible. Pas une estimation réelle Yassir.
+    """
+    pickup, dropoff = yassir_request.get("pickup") or {}, yassir_request.get("dropoff") or {}
+    if all(k in pickup for k in ("lat", "lng")) and all(k in dropoff for k in ("lat", "lng")):
+        km = haversine_km(pickup["lat"], pickup["lng"], dropoff["lat"], dropoff["lng"])
+        return max(4, min(35, round(3 + km / 25 * 60)))
+    return random.randint(6, 18)
 
 
 def process_command(text: str, city: Optional[str], phone: Optional[str],
@@ -447,6 +469,47 @@ def create_app(config: Optional[Dict[str, Any]] = None) -> Flask:
                 k: transcription.get(k) for k in ("transcription", "language", "duration_s", "model")
             }
         return success(data)
+
+    @app.post("/wassal/dispatch")
+    def dispatch():
+        """
+        SIMULATION d'envoi à Yassir : aucun appel réel n'est fait, l'API
+        partenaire n'étant pas encore branchée (voir README "Limites connues").
+        Ferme la boucle de démonstration en renvoyant un ordre, un chauffeur/
+        livreur factice et une ETA, à partir du `yassir_request` de
+        `POST /wassal/command`.
+
+        Body: {"yassir_request": {...}}
+        """
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            raise ApiError("body must be a valid JSON object", code="INVALID_JSON")
+        yassir_request = body.get("yassir_request")
+        if not isinstance(yassir_request, dict):
+            raise ApiError("'yassir_request' is required (send the object returned by /wassal/command)",
+                           code="MISSING_FIELDS")
+        missing = [f for f in ("service", "product", "pickup", "dropoff") if not yassir_request.get(f)]
+        if missing:
+            raise ApiError(f"yassir_request is incomplete, missing: {', '.join(missing)}",
+                           code="INCOMPLETE_REQUEST")
+
+        courier = random.choice(_MOCK_COURIERS)
+        order_id = f"WSL-{uuid.uuid4().hex[:8].upper()}"
+        courier_role = "driver" if yassir_request["service"] == "ride" else "courier"
+        logger.info("Dispatch (simulated) [%s] order=%s product=%s",
+                    g.request_id, order_id, yassir_request.get("product"))
+        return success({
+            "simulated": True,
+            "note": "Simulation Wassal : aucun appel réel à l'API Yassir (pas encore accessible). "
+                    "À brancher sur l'API partenaire une fois la spec connue.",
+            "order_id": order_id,
+            "status": "dispatched",
+            "product": yassir_request.get("product"),
+            "eta_minutes": estimate_eta_minutes(yassir_request),
+            courier_role: {"name": courier["name"], "vehicle": courier["vehicle"], "plate": courier["plate"]},
+            "pickup": yassir_request.get("pickup"),
+            "dropoff": yassir_request.get("dropoff"),
+        }, status=201)
 
     @app.get("/wassal/landmarks")
     def list_landmarks():

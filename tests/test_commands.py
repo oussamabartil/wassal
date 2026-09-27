@@ -222,6 +222,26 @@ class TestParser:
             parse_darija_command("taxi " * 200)
 
 
+class TestNegation:
+    @pytest.mark.parametrize("text", [
+        "ma bghitch taxi", "machi taxi", "mashi taxi", "ma bghitch grand taxi",
+    ])
+    def test_negated_service_is_not_matched(self, text):
+        r = parse_darija_command(text)
+        assert r["subtype"] is None
+        assert r["negation_detected"] is True
+
+    def test_negation_does_not_swallow_a_later_positive_intent(self):
+        # "je ne veux pas de taxi, je veux un tajine" -> Food (tajine), pas unknown.
+        r = parse_darija_command("ma bghitch taxi bghit tajine")
+        assert r["subtype"] == "food"
+        assert r["items"] == ["tajine"]
+
+    def test_positive_command_has_no_negation(self):
+        r = parse_darija_command("bghit taxi")
+        assert r["negation_detected"] is False
+
+
 # ---------------------------------------------------------------------------
 # Landmarks
 # ---------------------------------------------------------------------------
