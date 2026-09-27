@@ -54,6 +54,10 @@ _PHONE_RE = re.compile(r"^(?:\+212|00212|0)([5-7]\d{8})$")
 # Codes d'erreur HTTP de transcription / transcription error -> HTTP status.
 _TRANSCRIPTION_STATUS = {"MODEL_UNAVAILABLE": 503, "INFERENCE_ERROR": 500}
 
+# Sous-type -> onglet de l'app Yassir à ouvrir automatiquement après la commande vocale.
+# "package" n'a pas d'écran cible : hors de l'offre Yassir Maroc (Go, Food, Market).
+SUBTYPE_TO_SCREEN = {"taxi": "go", "food": "food", "market": "market", "package": None}
+
 # Chauffeurs/livreurs factices pour la simulation /wassal/dispatch (aucun appel réel à Yassir).
 _MOCK_COURIERS = [
     {"name": "Youssef B.", "vehicle": "Dacia Logan blanche", "plate": "12345-A-6"},
@@ -237,6 +241,7 @@ def process_command(text: str, city: Optional[str], phone: Optional[str],
     result: Dict[str, Any] = {
         "service_type": parsed["service_type"],
         "subtype": subtype,
+        "target_screen": SUBTYPE_TO_SCREEN.get(subtype),
         "yassir_product": parsed["yassir_product"],
         "destination": destination,
         "pickup": pickup,
@@ -250,6 +255,7 @@ def process_command(text: str, city: Optional[str], phone: Optional[str],
         "warnings": warnings,
         "language": parsed["language"],
         "matched_keywords": parsed["matched_keywords"],
+        "negation_detected": parsed["negation_detected"],
         "input_text": text,
         "city": city,
     }
