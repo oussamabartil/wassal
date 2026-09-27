@@ -55,6 +55,11 @@ class ModelUnavailableError(TranscriptionError):
 
 _model: Any = None
 _model_lock = threading.Lock()
+# Une seule transcription à la fois : deux inférences simultanées d'un modèle
+# de 1,7 milliard de paramètres sur CPU saturent la mémoire et le processeur.
+_inference_lock = threading.Lock()
+_load_error: Optional[str] = None
+_warmup_thread: Optional[threading.Thread] = None
 
 
 def _model_name() -> str:
@@ -102,6 +107,22 @@ def is_model_loaded() -> bool:
     return _model is not None
 
 
+def model_status() -> Dict[str, Any]:
+    """
+    État du modèle pour le health check : "ready", "loading", "error" ou "not_loaded".
+    Model state for monitoring (useful while a server downloads the weights).
+    """
+    if _model is not None:
+        state = "ready"
+    elif _warmup_thread is not None and _warmup_thread.is_alive():
+        state = "loading"
+    elif _load_error:
+        state = "error"
+    else:
+        state = "not_loaded"
+    return {"state": state, "error": _load_error if state == "error" else None}
+
+
 def get_asr_model() -> Any:
     """
     Charge (une seule fois) le modèle MoulSot via qwen_asr.
@@ -110,7 +131,7 @@ def get_asr_model() -> Any:
     Raises:
         ModelUnavailableError: dépendance manquante ou chargement impossible.
     """
-    global _model
+    global _model, _load_error
     if _model is not None:
         return _model
     with _model_lock:
@@ -136,7 +157,8 @@ def get_asr_model() -> Any:
                 token=os.getenv("HF_TOKEN") or None,
             )
         except Exception as exc:  # réseau, modèle introuvable, mémoire...
-            raise ModelUnavailableError(f"could not load model '{model_name}': {exc}") from exc
+            _load_error = f"could not load model '{model_name}': {exc}"
+            raise ModelUnavailableError(_load_error) from exc
         logger.info("ASR model loaded in %.1fs", time.perf_counter() - started)
         return _model
 
@@ -256,7 +278,8 @@ def transcribe_darija_audio(audio_path: str) -> Dict[str, Any]:
             return _error("AUDIO_TOO_LONG", f"audio exceeds {_max_audio_seconds():.0f}s")
 
         model = get_asr_model()
-        output = model.transcribe(audio=(samples, sample_rate), language=_language())
+        with _inference_lock:
+            output = model.transcribe(audio=(samples, sample_rate), language=_language())
         text = _extract_text(output)
     except ModelUnavailableError as exc:
         return _error("MODEL_UNAVAILABLE", str(exc))
@@ -289,6 +312,19 @@ def warmup() -> Optional[str]:
     except ModelUnavailableError as exc:
         logger.warning("ASR warmup failed: %s", exc)
         return str(exc)
+
+
+def start_background_warmup() -> None:
+    """
+    Charge le modèle dans un thread, sans bloquer le démarrage du serveur.
+    Sur un serveur, le premier chargement télécharge plusieurs Go : l'API texte
+    répond pendant ce temps, et /wassal/test indique "loading" puis "ready".
+    """
+    global _warmup_thread
+    if _model is not None or (_warmup_thread is not None and _warmup_thread.is_alive()):
+        return
+    _warmup_thread = threading.Thread(target=warmup, name="asr-warmup", daemon=True)
+    _warmup_thread.start()
 
 
 if __name__ == "__main__":
