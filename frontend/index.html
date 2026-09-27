@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Wassal · وصّل</title>
+  <meta name="description" content="Wassal : commandes vocales en Darija converties en requêtes Yassir.">
+  <style>
+    :root {
+      --bg: #f6f5fb;
+      --surface: #ffffff;
+      --text: #1d1b29;
+      --muted: #6b6880;
+      --border: #e4e1ef;
+      --accent: #6b2fd6;
+      --accent-strong: #5520b8;
+      --accent-soft: #efe8fd;
+      --ok: #137a4b;
+      --ok-soft: #e3f5ec;
+      --warn: #9a5b00;
+      --warn-soft: #fdf1dd;
+      --err: #b42318;
+      --err-soft: #fdecea;
+      --code-bg: #15131f;
+      --code-text: #e8e6f3;
+      --radius: 14px;
+      --shadow: 0 1px 2px rgba(20, 16, 40, .05), 0 8px 24px rgba(20, 16, 40, .06);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #111019;
+        --surface: #1a1824;
+        --text: #eeecf6;
+        --muted: #a29fb6;
+        --border: #2c2939;
+        --accent: #9b72f0;
+        --accent-strong: #b394f5;
+        --accent-soft: #2a2140;
+        --ok: #5fd39a;
+        --ok-soft: #173326;
+        --warn: #f0b458;
+        --warn-soft: #3a2c14;
+        --err: #f3877d;
+        --err-soft: #3d1b18;
+        --code-bg: #0c0b12;
+        --shadow: none;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans Arabic", sans-serif;
+    }
+    .wrap { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
+    .brand { display: flex; align-items: baseline; gap: 10px; }
+    .brand h1 { margin: 0; font-size: 1.6rem; letter-spacing: -.02em; }
+    .brand .ar { font-size: 1.4rem; color: var(--accent); font-weight: 600; }
+    .tagline { margin: 2px 0 0; color: var(--muted); font-size: .92rem; }
+    .status { display: inline-flex; align-items: center; gap: 6px; font-size: .82rem; color: var(--muted); white-space: nowrap; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+    .dot.on { background: var(--ok); }
+    .dot.off { background: var(--err); }
+
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px; }
+    .card + .card { margin-top: 16px; }
+    label { display: block; font-weight: 600; font-size: .9rem; margin-bottom: 6px; }
+    .hint { font-weight: 400; color: var(--muted); }
+    textarea, input, select {
+      width: 100%;
+      font: inherit;
+      color: var(--text);
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+    }
+    textarea { min-height: 96px; resize: vertical; font-size: 1.1rem; }
+    textarea:focus, input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: transparent; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; }
+    @media (max-width: 520px) { .row { grid-template-columns: 1fr; } }
+
+    .examples { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .chip {
+      border: 1px solid var(--border);
+      background: var(--accent-soft);
+      color: var(--accent-strong);
+      border-radius: 999px;
+      padding: 4px 12px;
+      font: inherit;
+      font-size: .88rem;
+      cursor: pointer;
+    }
+    .chip:hover { border-color: var(--accent); }
+
+    details.audio { margin-top: 14px; font-size: .92rem; }
+    details.audio summary { cursor: pointer; color: var(--muted); }
+    details.audio input { margin-top: 8px; }
+
+    .actions { display: flex; align-items: center; gap: 12px; margin-top: 18px; }
+    button.primary {
+      background: var(--accent);
+      color: #fff;
+      border: 0;
+      border-radius: 10px;
+      padding: 12px 28px;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+      min-width: 140px;
+    }
+    button.primary:hover { background: var(--accent-strong); }
+    button.primary:disabled { opacity: .6; cursor: progress; }
+    .kbd { color: var(--muted); font-size: .82rem; }
+
+    .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+    .stat { background: var(--bg); border-radius: 10px; padding: 12px; min-width: 0; }
+    .stat .k { font-size: .78rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+    .stat .v { font-weight: 600; margin-top: 2px; overflow-wrap: anywhere; }
+    .bar { height: 6px; background: var(--border); border-radius: 3px; margin-top: 8px; overflow: hidden; }
+    .bar > span { display: block; height: 100%; background: var(--accent); width: 0; transition: width .3s; }
+
+    .badge { display: inline-block; padding: 4px 12px; border-radius: 999px; font-weight: 600; font-size: .88rem; }
+    .badge.ok { background: var(--ok-soft); color: var(--ok); }
+    .badge.warn { background: var(--warn-soft); color: var(--warn); }
+    .badge.err { background: var(--err-soft); color: var(--err); }
+    .result-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+    .result-head h2 { margin: 0; font-size: 1.1rem; }
+    ul.notes { margin: 12px 0 0; padding-left: 20px; color: var(--warn); font-size: .9rem; }
+
+    .json-head { display: flex; justify-content: space-between; align-items: center; margin: 18px 0 8px; }
+    .json-head span { font-weight: 600; font-size: .9rem; }
+    button.ghost { background: none; border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 4px 10px; font: inherit; font-size: .82rem; cursor: pointer; }
+    pre {
+      margin: 0;
+      background: var(--code-bg);
+      color: var(--code-text);
+      border-radius: 10px;
+      padding: 14px;
+      overflow: auto;
+      max-height: 480px;
+      font: 13px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
+      direction: ltr;
+    }
+    [hidden] { display: none !important; }
+    footer { text-align: center; color: var(--muted); font-size: .8rem; margin-top: 28px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <div class="brand"><h1>Wassal</h1><span class="ar" lang="ar">وصّل</span></div>
+        <p class="tagline">Parlez Darija, Wassal prépare la commande Yassir.</p>
+      </div>
+      <span class="status" id="apiStatus"><span class="dot" id="apiDot"></span><span id="apiLabel">API…</span></span>
+    </header>
+
+    <form class="card" id="commandForm" novalidate>
+      <label for="darijaText">Commande en Darija <span class="hint">(arabe, arabizi ou français)</span></label>
+      <textarea id="darijaText" name="darija_text" dir="auto" maxlength="500"
+                placeholder="بغيت تاكسي للقارة · jib lia khobz o 7lib"></textarea>
+
+      <div class="examples" aria-label="Exemples">
+        <button type="button" class="chip" data-text="بغيت تاكسي للقارة" data-city="casablanca" lang="ar">بغيت تاكسي للقارة</button>
+        <button type="button" class="chip" data-text="jib lia khobz o 7lib" data-city="casablanca">jib lia khobz o 7lib</button>
+        <button type="button" class="chip" data-text="waslni package ldjamaa fasa" data-city="fes">waslni package ldjamaa fasa</button>
+        <button type="button" class="chip" data-text="bghit taxi l jemaa el fna daba" data-city="marrakech">bghit taxi l jemaa el fna daba</button>
+        <button type="button" class="chip" data-text="taxi derrière la mosquée" data-city="casablanca">taxi derrière la mosquée</button>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="city">Ville</label>
+          <select id="city" name="city">
+            <option value="casablanca">Casablanca</option>
+            <option value="fes">Fès</option>
+            <option value="marrakech">Marrakech</option>
+            <option value="">Autre / détecter</option>
+          </select>
+        </div>
+        <div>
+          <label for="phone">Téléphone <span class="hint">(optionnel)</span></label>
+          <input id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="06 12 34 56 78">
+        </div>
+      </div>
+
+      <details class="audio">
+        <summary>Ou envoyer un fichier audio (MoulSot)</summary>
+        <input id="audio" name="audio" type="file" accept=".wav,.mp3,.flac,.ogg,.m4a,.webm,audio/*">
+      </details>
+
+      <div class="actions">
+        <button class="primary" type="submit" id="sendBtn">Envoyer</button>
+        <span class="kbd">Ctrl + Entrée</span>
+      </div>
+    </form>
+
+    <section class="card" id="resultCard" hidden aria-live="polite">
+      <div class="result-head">
+        <h2>Résultat</h2>
+        <span class="badge" id="readyBadge"></span>
+      </div>
+      <div class="summary" id="summary"></div>
+      <ul class="notes" id="notes" hidden></ul>
+      <div class="json-head">
+        <span>JSON Yassir</span>
+        <button type="button" class="ghost" id="copyBtn">Copier</button>
+      </div>
+      <pre id="jsonOutput"></pre>
+    </section>
+
+    <footer>Wassal · MoulSot v0.3 (Apache 2.0) · Yassir AI for Everyday Impact</footer>
+  </div>
+
+  <script>
+    // Même origine si servi par Flask, sinon localhost:5000 (ouverture en file://).
+    const API_BASE = location.protocol.startsWith("http") ? "" : "http://localhost:5000";
+
+    const $ = (id) => document.getElementById(id);
+    const form = $("commandForm");
+    const sendBtn = $("sendBtn");
+
+    const SERVICE_LABELS = {
+      taxi: "🚕 Taxi",
+      food: "🛒 Livraison repas / courses",
+      package: "📦 Livraison colis",
+    };
+    const URGENCY_LABELS = { normal: "Normale", quick: "Rapide", urgent: "Urgente" };
+
+    async function checkHealth() {
+      try {
+        const res = await fetch(`${API_BASE}/wassal/test`);
+        const body = await res.json();
+        const ok = res.ok && body.success;
+        $("apiDot").className = "dot " + (ok ? "on" : "off");
+        $("apiLabel").textContent = ok ? `API v${body.data.version}` : "API indisponible";
+      } catch (err) {
+        $("apiDot").className = "dot off";
+        $("apiLabel").textContent = "API hors ligne";
+      }
+    }
+
+    function stat(key, value, confidence) {
+      const box = document.createElement("div");
+      box.className = "stat";
+      const k = document.createElement("div");
+      k.className = "k";
+      k.textContent = key;
+      const v = document.createElement("div");
+      v.className = "v";
+      v.textContent = value;
+      box.append(k, v);
+      if (typeof confidence === "number") {
+        const bar = document.createElement("div");
+        bar.className = "bar";
+        const fill = document.createElement("span");
+        bar.appendChild(fill);
+        box.appendChild(bar);
+        requestAnimationFrame(() => { fill.style.width = `${Math.round(confidence * 100)}%`; });
+      }
+      return box;
+    }
+
+    function placeLabel(point) {
+      if (!point) return "—";
+      const rel = { behind: "derrière ", front: "devant ", near: "près de ", inside: "dans " }[point.relation] || "";
+      return rel + point.place_name;
+    }
+
+    function renderResult(body, httpStatus) {
+      $("resultCard").hidden = false;
+      $("jsonOutput").textContent = JSON.stringify(body, null, 2);
+      const summary = $("summary");
+      const notes = $("notes");
+      summary.replaceChildren();
+      notes.replaceChildren();
+      const badge = $("readyBadge");
+
+      if (!body.success) {
+        badge.className = "badge err";
+        badge.textContent = `Erreur ${httpStatus}`;
+        summary.appendChild(stat("Message", body.error ? body.error.message : "Erreur inconnue"));
+        notes.hidden = true;
+        return;
+      }
+
+      const d = body.data;
+      badge.className = "badge " + (d.ready_for_yassir ? "ok" : "warn");
+      badge.textContent = d.ready_for_yassir ? "✓ Prêt pour Yassir" : "Informations manquantes";
+
+      summary.append(
+        stat("Service", SERVICE_LABELS[d.subtype] || "Non reconnu"),
+        stat("Destination", placeLabel(d.destination)),
+      );
+      if (d.pickup) summary.appendChild(stat("Départ", placeLabel(d.pickup)));
+      if (d.items && d.items.length) {
+        summary.appendChild(stat("Articles", d.item_details.map((i) => `${i.quantity}× ${i.name}`).join(", ")));
+      }
+      summary.append(
+        stat("Urgence", URGENCY_LABELS[d.urgency] || d.urgency),
+        stat("Confiance", `${Math.round(d.confidence * 100)} %`, d.confidence),
+      );
+      if (d.transcription) summary.appendChild(stat("Transcription", d.transcription.transcription));
+
+      const messages = [
+        ...d.missing_fields.map((f) => `Champ manquant : ${f}`),
+        ...d.warnings,
+      ];
+      messages.forEach((m) => {
+        const li = document.createElement("li");
+        li.textContent = m;
+        notes.appendChild(li);
+      });
+      notes.hidden = messages.length === 0;
+    }
+
+    async function submit(event) {
+      event.preventDefault();
+      const text = $("darijaText").value.trim();
+      const audioFile = $("audio").files[0];
+      if (!text && !audioFile) {
+        $("darijaText").focus();
+        return;
+      }
+
+      let options;
+      if (audioFile) {
+        const data = new FormData();
+        data.append("audio", audioFile);
+        data.append("city", $("city").value);
+        data.append("phone", $("phone").value.trim());
+        if (text) data.append("darija_text", text);
+        options = { method: "POST", body: data };
+      } else {
+        options = {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ darija_text: text, city: $("city").value, phone: $("phone").value.trim() }),
+        };
+      }
+
+      sendBtn.disabled = true;
+      sendBtn.textContent = audioFile ? "Transcription…" : "Envoi…";
+      try {
+        const res = await fetch(`${API_BASE}/wassal/command`, options);
+        let body;
+        try {
+          body = await res.json();
+        } catch (_) {
+          body = { success: false, error: { message: `Réponse invalide (${res.status})` } };
+        }
+        renderResult(body, res.status);
+      } catch (err) {
+        renderResult({ success: false, error: { message: `Impossible de joindre l'API (${API_BASE || location.origin}). Lancez : python src/api.py` } }, 0);
+      } finally {
+        sendBtn.disabled = false;
+        sendBtn.textContent = "Envoyer";
+      }
+    }
+
+    form.addEventListener("submit", submit);
+    $("darijaText").addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) form.requestSubmit();
+    });
+    document.querySelectorAll(".chip").forEach((chip) => {
+      chip.addEventListener("click", () => {
+        $("darijaText").value = chip.dataset.text;
+        $("city").value = chip.dataset.city;
+        $("audio").value = "";
+        form.requestSubmit();
+      });
+    });
+    $("copyBtn").addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText($("jsonOutput").textContent);
+        $("copyBtn").textContent = "Copié ✓";
+      } catch (_) {
+        $("copyBtn").textContent = "Échec";
+      }
+      setTimeout(() => { $("copyBtn").textContent = "Copier"; }, 1500);
+    });
+
+    checkHealth();
+  </script>
+</body>
+</html>

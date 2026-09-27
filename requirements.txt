@@ -1,0 +1,22 @@
+# Wassal - وصّل
+# Python 3.9+ (no hard upper bound; qwen-asr's own deps pull compatible
+# transformers/torch/accelerate for whichever interpreter you're on).
+
+# --- ASR : MoulSot v0.3 (Qwen3-ASR architecture) ---
+# The model is NOT yet supported by transformers.pipeline() — its card
+# (huggingface.co/atlasia/moulsot.v0.3) requires this loader package, which
+# pulls its own pinned transformers/torch/accelerate as transitive deps.
+# Heavy install (~1-2 GB: torch, transformers, gradio, accelerate...).
+qwen-asr==0.0.6
+soundfile>=0.13,<1.0
+# Décodage m4a/webm/aac sans ffmpeg système (wheels avec ffmpeg intégré)
+av>=12,<20
+
+# --- API ---
+flask>=3.0,<4.0
+flask-cors>=4.0,<7.0
+python-dotenv>=1.0,<2.0
+requests>=2.31,<3.0
+
+# --- Tests ---
+pytest>=7.4,<10.0
