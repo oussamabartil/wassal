@@ -275,3 +275,13 @@ python src/transcribe.py commande.wav
 - Modèle MoulSot v0.3 : Apache 2.0.
 - Lieux dans `data/osm/` : © contributeurs [OpenStreetMap](https://www.openstreetmap.org/copyright), licence ODbL 1.0. L'attribution est affichée dans l'interface.
 - Code Wassal : à définir (ajouter un fichier `LICENSE`).
+
+## Équipe
+
+Projet réalisé en une journée lors du hackathon **GOMYCODE × NVIDIA « Build with Any AI »** (27 septembre 2026), candidature au prix **Yassir AI for Everyday Impact** (Maroc).
+
+| Membre | Rôle |
+|---|---|
+| **Nassim Hsaine** | Chef d'équipe : choix du problème et du prix visé, coordination de l'équipe, recherche sur les modèles d'IA adaptés à la Darija, pitch et soumission du projet |
+| **Oussama Bartil** | Cœur du produit : parser Darija, résolution des adresses sur OpenStreetMap, API Flask, transcription vocale MoulSot, déploiement Hugging Face |
+| **Abdelkrim Bellagnech** | Expérience mobile : démonstration d'intégration Go / Food / Market, gestion des négations, simulation du dispatch |
