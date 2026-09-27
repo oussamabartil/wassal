@@ -1,501 +1,605 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Wassal · وصّل</title>
-  <meta name="description" content="Wassal : commandes vocales en Darija converties en requêtes Yassir.">
-  <style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Yassir · Wassal</title>
+<meta name="description" content="POC : bouton vocal Darija intégré à l'app Yassir, qui route automatiquement vers Go, Food ou Market.">
+<style>
+  :root {
+    --bg: #eef0f4;
+    --app-bg: #f7f8fb;
+    --surface: #ffffff;
+    --text: #14151a;
+    --muted: #6b6f7b;
+    --border: #e6e8ee;
+    --accent: #ff6a00;       /* placeholder Yassir-orange -- swap for real brand token */
+    --accent-ink: #ffffff;
+    --accent-soft: #fff1e6;
+    --go: #1f7ae0;
+    --go-soft: #e8f1fd;
+    --food: #e0631f;
+    --food-soft: #fdece2;
+    --market: #1f9d55;
+    --market-soft: #e6f7ec;
+    --ok: #14904a;
+    --ok-soft: #e4f7ec;
+    --warn: #9a6300;
+    --warn-soft: #fdf1d9;
+    --err: #c22a1e;
+    --err-soft: #fbe7e5;
+    --shadow: 0 10px 30px rgba(20, 21, 26, .12);
+  }
+  @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #f6f5fb;
-      --surface: #ffffff;
-      --text: #1d1b29;
-      --muted: #6b6880;
-      --border: #e4e1ef;
-      --accent: #6b2fd6;
-      --accent-strong: #5520b8;
-      --accent-soft: #efe8fd;
-      --ok: #137a4b;
-      --ok-soft: #e3f5ec;
-      --warn: #9a5b00;
-      --warn-soft: #fdf1dd;
-      --err: #b42318;
-      --err-soft: #fdecea;
-      --code-bg: #15131f;
-      --code-text: #e8e6f3;
-      --radius: 14px;
-      --shadow: 0 1px 2px rgba(20, 16, 40, .05), 0 8px 24px rgba(20, 16, 40, .06);
+      --bg: #050506;
+      --app-bg: #121319;
+      --surface: #1b1c24;
+      --text: #f3f3f6;
+      --muted: #9b9daa;
+      --border: #2c2d38;
+      --accent: #ff7d2b;
+      --accent-ink: #14151a;
+      --accent-soft: #3a2313;
+      --go-soft: #142a44;
+      --food-soft: #3a2113;
+      --market-soft: #123420;
+      --ok-soft: #123321;
+      --warn-soft: #3a2c0c;
+      --err-soft: #3a1613;
+      --shadow: 0 10px 30px rgba(0, 0, 0, .5);
     }
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg: #111019;
-        --surface: #1a1824;
-        --text: #eeecf6;
-        --muted: #a29fb6;
-        --border: #2c2939;
-        --accent: #9b72f0;
-        --accent-strong: #b394f5;
-        --accent-soft: #2a2140;
-        --ok: #5fd39a;
-        --ok-soft: #173326;
-        --warn: #f0b458;
-        --warn-soft: #3a2c14;
-        --err: #f3877d;
-        --err-soft: #3d1b18;
-        --code-bg: #0c0b12;
-        --shadow: none;
-      }
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans Arabic", sans-serif;
+    display: flex;
+    justify-content: center;
+    min-height: 100vh;
+  }
+
+  /* --- Phone shell: full-bleed on a real phone, framed on a laptop/projector --- */
+  .device {
+    width: 430px;
+    max-width: 100vw;
+    height: 100vh;
+    background: var(--app-bg);
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    overflow: hidden;
+  }
+  @media (min-width: 460px) {
+    body { align-items: center; padding: 28px 0; }
+    .device {
+      height: min(900px, 94vh);
+      border-radius: 42px;
+      border: 10px solid #0b0b0d;
+      box-shadow: var(--shadow);
     }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      background: var(--bg);
-      color: var(--text);
-      font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans Arabic", sans-serif;
+    .notch {
+      position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+      width: 120px; height: 22px; background: #0b0b0d; border-radius: 0 0 16px 16px; z-index: 30;
     }
-    .wrap { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; }
-    header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
-    .brand { display: flex; align-items: baseline; gap: 10px; }
-    .brand h1 { margin: 0; font-size: 1.6rem; letter-spacing: -.02em; }
-    .brand .ar { font-size: 1.4rem; color: var(--accent); font-weight: 600; }
-    .tagline { margin: 2px 0 0; color: var(--muted); font-size: .92rem; }
-    .status { display: inline-flex; align-items: center; gap: 6px; font-size: .82rem; color: var(--muted); white-space: nowrap; }
-    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
-    .dot.on { background: var(--ok); }
-    .dot.off { background: var(--err); }
+  }
+  .notch { display: none; }
+  @media (min-width: 460px) { .notch { display: block; } }
 
-    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px; }
-    .card + .card { margin-top: 16px; }
-    label { display: block; font-weight: 600; font-size: .9rem; margin-bottom: 6px; }
-    .hint { font-weight: 400; color: var(--muted); }
-    textarea, input, select {
-      width: 100%;
-      font: inherit;
-      color: var(--text);
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 10px 12px;
-    }
-    textarea { min-height: 96px; resize: vertical; font-size: 1.1rem; }
-    textarea:focus, input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: transparent; }
-    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; }
-    @media (max-width: 520px) { .row { grid-template-columns: 1fr; } }
+  /* --- Top app bar --- */
+  .appbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 18px 10px; flex-shrink: 0; z-index: 5;
+  }
+  .brand { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 1.15rem; letter-spacing: -.02em; }
+  .brand .dot-logo { width: 22px; height: 22px; border-radius: 7px; background: var(--accent); }
+  .place-pill {
+    display: inline-flex; align-items: center; gap: 5px; font-size: .78rem; color: var(--muted);
+    background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 5px 10px;
+    max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .health-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+  .health-dot.on { background: var(--ok); } .health-dot.off { background: var(--err); }
 
-    .examples { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-    .chip {
-      border: 1px solid var(--border);
-      background: var(--accent-soft);
-      color: var(--accent-strong);
-      border-radius: 999px;
-      padding: 4px 12px;
-      font: inherit;
-      font-size: .88rem;
-      cursor: pointer;
-    }
-    .chip:hover { border-color: var(--accent); }
+  /* --- Voice / text command bar --- */
+  .command-bar { padding: 4px 18px 14px; flex-shrink: 0; }
+  .command-shell {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 20px;
+    padding: 8px 8px 8px 16px; box-shadow: 0 1px 2px rgba(20,16,10,.04);
+  }
+  .command-shell input {
+    flex: 1; border: 0; background: none; color: var(--text); font: inherit; font-size: .95rem;
+    padding: 6px 0; min-width: 0;
+  }
+  .command-shell input:focus { outline: none; }
+  .mic-btn {
+    flex-shrink: 0; width: 42px; height: 42px; border-radius: 50%; border: 0; cursor: pointer;
+    background: var(--accent); color: var(--accent-ink); font-size: 1.15rem;
+    display: flex; align-items: center; justify-content: center; transition: transform .15s, background .2s;
+  }
+  .mic-btn.recording { background: var(--err); animation: pulse 1.1s infinite; }
+  @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(194,42,30,.4); } 50% { box-shadow: 0 0 0 10px rgba(194,42,30,0); } }
+  .mic-btn:active { transform: scale(.92); }
+  .examples { display: flex; gap: 8px; overflow-x: auto; margin-top: 10px; padding-bottom: 2px; scrollbar-width: none; }
+  .examples::-webkit-scrollbar { display: none; }
+  .chip {
+    flex-shrink: 0; border: 1px solid var(--border); background: var(--surface); color: var(--muted);
+    border-radius: 999px; padding: 6px 13px; font: inherit; font-size: .8rem; cursor: pointer; white-space: nowrap;
+  }
+  .chip:active { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+  .listening-hint { text-align: center; font-size: .82rem; color: var(--muted); margin-top: 8px; min-height: 1.1em; }
 
-    .location { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
-    .location .hint { font-size: .85rem; }
-    .location.need button.ghost { border-color: var(--warn); color: var(--warn); }
-    details.audio { margin-top: 14px; font-size: .92rem; }
-    details.audio summary { cursor: pointer; color: var(--muted); }
-    details.audio input { margin-top: 8px; }
+  /* --- Screens --- */
+  .screens { flex: 1; overflow-y: auto; padding: 4px 18px 18px; }
+  .screen { display: none; }
+  .screen.active { display: block; animation: fadein .25s ease; }
+  @keyframes fadein { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
-    .actions { display: flex; align-items: center; gap: 12px; margin-top: 18px; }
-    button.primary {
-      background: var(--accent);
-      color: #fff;
-      border: 0;
-      border-radius: 10px;
-      padding: 12px 28px;
-      font: inherit;
-      font-weight: 600;
-      cursor: pointer;
-      min-width: 140px;
-    }
-    button.primary:hover { background: var(--accent-strong); }
-    button.primary:disabled { opacity: .6; cursor: progress; }
-    .kbd { color: var(--muted); font-size: .82rem; }
+  .empty-state { text-align: center; padding: 48px 20px; color: var(--muted); }
+  .empty-state .big { font-size: 2.4rem; margin-bottom: 10px; }
+  .empty-state p { margin: 4px 0 0; font-size: .88rem; }
 
-    .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
-    .stat { background: var(--bg); border-radius: 10px; padding: 12px; min-width: 0; }
-    .stat .k { font-size: .78rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
-    .stat .v { font-weight: 600; margin-top: 2px; overflow-wrap: anywhere; }
-    .bar { height: 6px; background: var(--border); border-radius: 3px; margin-top: 8px; overflow: hidden; }
-    .bar > span { display: block; height: 100%; background: var(--accent); width: 0; transition: width .3s; }
+  .order-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 16px; margin-top: 8px;
+  }
+  .order-card + .order-card { margin-top: 12px; }
+  .screen-title { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 1.1rem; margin: 6px 0 4px; }
+  .screen-title .swatch { width: 10px; height: 10px; border-radius: 3px; }
+  #screen-go .swatch { background: var(--go); } #screen-food .swatch { background: var(--food); } #screen-market .swatch { background: var(--market); }
 
-    .badge { display: inline-block; padding: 4px 12px; border-radius: 999px; font-weight: 600; font-size: .88rem; }
-    .badge.ok { background: var(--ok-soft); color: var(--ok); }
-    .badge.warn { background: var(--warn-soft); color: var(--warn); }
-    .badge.err { background: var(--err-soft); color: var(--err); }
-    .result-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
-    .result-head h2 { margin: 0; font-size: 1.1rem; }
-    ul.notes { margin: 12px 0 0; padding-left: 20px; color: var(--warn); font-size: .9rem; }
+  .route { display: flex; gap: 12px; align-items: stretch; }
+  .route .line { display: flex; flex-direction: column; align-items: center; padding-top: 4px; }
+  .route .line .pt { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
+  .route .line .pt.dest { background: var(--accent); }
+  .route .line .seg { width: 2px; flex: 1; background: var(--border); margin: 3px 0; min-height: 18px; }
+  .route .stops { flex: 1; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .stop .label { font-size: .74rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .stop .value { font-weight: 700; margin-top: 1px; overflow-wrap: anywhere; }
+  .stop .sub { font-size: .8rem; color: var(--muted); margin-top: 1px; }
 
-    .json-head { display: flex; justify-content: space-between; align-items: center; margin: 18px 0 8px; }
-    .json-head span { font-weight: 600; font-size: .9rem; }
-    button.ghost { background: none; border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 4px 10px; font: inherit; font-size: .82rem; cursor: pointer; }
-    pre {
-      margin: 0;
-      background: var(--code-bg);
-      color: var(--code-text);
-      border-radius: 10px;
-      padding: 14px;
-      overflow: auto;
-      max-height: 480px;
-      font: 13px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
-      direction: ltr;
-    }
-    [hidden] { display: none !important; }
-    footer { text-align: center; color: var(--muted); font-size: .8rem; margin-top: 28px; }
-  </style>
+  .cart-list { display: flex; flex-direction: column; gap: 10px; }
+  .cart-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .cart-item .qty {
+    background: var(--accent-soft); color: var(--accent); font-weight: 800; font-size: .82rem;
+    border-radius: 8px; padding: 3px 9px; flex-shrink: 0;
+  }
+  .cart-item .name { flex: 1; font-weight: 600; }
+
+  .meta-row { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+  .meta-chip { font-size: .78rem; padding: 5px 10px; border-radius: 999px; font-weight: 700; }
+  .meta-chip.urgency-urgent { background: var(--err-soft); color: var(--err); }
+  .meta-chip.urgency-quick { background: var(--warn-soft); color: var(--warn); }
+  .meta-chip.urgency-normal { background: var(--border); color: var(--muted); }
+  .confidence-wrap { margin-top: 12px; }
+  .confidence-wrap .k { font-size: .74rem; color: var(--muted); display: flex; justify-content: space-between; }
+  .bar { height: 6px; background: var(--border); border-radius: 3px; margin-top: 5px; overflow: hidden; }
+  .bar > span { display: block; height: 100%; background: var(--accent); width: 0; transition: width .4s; }
+
+  .cta-banner {
+    background: var(--warn-soft); color: var(--warn); border-radius: 14px; padding: 12px 14px;
+    font-size: .86rem; margin-top: 8px; display: flex; align-items: center; gap: 10px; justify-content: space-between;
+  }
+  .cta-banner button {
+    flex-shrink: 0; border: 0; background: var(--warn); color: #fff; border-radius: 10px; padding: 7px 12px;
+    font: inherit; font-weight: 700; font-size: .8rem; cursor: pointer;
+  }
+  .err-banner { background: var(--err-soft); color: var(--err); border-radius: 14px; padding: 12px 14px; font-size: .86rem; margin-top: 8px; }
+
+  .confirm-btn {
+    width: 100%; margin-top: 16px; border: 0; border-radius: 14px; padding: 14px; font: inherit;
+    font-weight: 800; font-size: .98rem; cursor: pointer; color: #fff;
+  }
+  #screen-go .confirm-btn { background: var(--go); } #screen-food .confirm-btn { background: var(--food); } #screen-market .confirm-btn { background: var(--market); }
+  .confirm-btn:disabled { opacity: .55; cursor: progress; }
+
+  .dispatch-card { background: var(--ok-soft); border: 1px solid var(--ok); border-radius: 16px; padding: 16px; margin-top: 14px; }
+  .dispatch-card .head { display: flex; align-items: center; gap: 8px; font-weight: 800; color: var(--ok); }
+  .dispatch-card .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+  .dispatch-card .cell .k { font-size: .72rem; color: var(--muted); text-transform: uppercase; }
+  .dispatch-card .cell .v { font-weight: 700; margin-top: 1px; }
+  .sim-flag { font-size: .72rem; color: var(--muted); margin-top: 10px; text-align: center; }
+
+  /* --- Bottom tab bar (mirrors Yassir's own Go / Food / Market) --- */
+  .tabbar { display: flex; border-top: 1px solid var(--border); background: var(--surface); flex-shrink: 0; padding-bottom: env(safe-area-inset-bottom); }
+  .tab {
+    flex: 1; border: 0; background: none; padding: 10px 4px 8px; display: flex; flex-direction: column;
+    align-items: center; gap: 3px; color: var(--muted); font: inherit; font-size: .72rem; font-weight: 700; cursor: pointer;
+    position: relative;
+  }
+  .tab .ic { font-size: 1.25rem; }
+  .tab.active { color: var(--text); }
+  .tab.active .ic { transform: translateY(-1px); }
+  .tab[data-tab="go"].active { color: var(--go); }
+  .tab[data-tab="food"].active { color: var(--food); }
+  .tab[data-tab="market"].active { color: var(--market); }
+
+  [hidden] { display: none !important; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
+</style>
 </head>
 <body>
-  <div class="wrap">
-    <header>
-      <div>
-        <div class="brand"><h1>Wassal</h1><span class="ar" lang="ar">وصّل</span></div>
-        <p class="tagline">Parlez Darija, Wassal prépare la commande Yassir.</p>
-      </div>
-      <span class="status" id="apiStatus"><span class="dot" id="apiDot"></span><span id="apiLabel">API…</span></span>
+  <div class="device">
+    <div class="notch"></div>
+
+    <header class="appbar">
+      <div class="brand"><span class="dot-logo"></span>Yassir</div>
+      <span class="place-pill" id="statusPill"><span class="health-dot" id="healthDot"></span><span id="statusText">Connexion…</span></span>
     </header>
 
-    <form class="card" id="commandForm" novalidate>
-      <label for="darijaText">Commande en Darija <span class="hint">(arabe, arabizi ou français)</span></label>
-      <textarea id="darijaText" name="darija_text" dir="auto" maxlength="500"
-                placeholder="بغيت تاكسي للقارة · jib lia khobz o 7lib"></textarea>
-
+    <div class="command-bar">
+      <form class="command-shell" id="commandForm">
+        <input id="darijaText" name="darija_text" dir="auto" maxlength="500" autocomplete="off"
+               placeholder="بغيت تاكسي · jib lia khobz…" aria-label="Commande en Darija">
+        <button type="button" class="mic-btn" id="micBtn" aria-label="Parler">🎤</button>
+        <button type="submit" class="sr-only">Envoyer</button>
+      </form>
+      <div class="listening-hint" id="listeningHint" aria-live="polite"></div>
       <div class="examples" aria-label="Exemples">
-        <button type="button" class="chip" data-text="بغيت تاكسي للقارة" data-city="casablanca" lang="ar">بغيت تاكسي للقارة</button>
-        <button type="button" class="chip" data-text="jib lia khobz o 7lib" data-city="casablanca">jib lia khobz o 7lib</button>
-        <button type="button" class="chip" data-text="bghit tajine mn resto fasa" data-city="fes">bghit tajine mn resto fasa</button>
-        <button type="button" class="chip" data-text="bghit taxi l jemaa el fna daba" data-city="marrakech">bghit taxi l jemaa el fna daba</button>
-        <button type="button" class="chip" data-text="taxi derrière la mosquée" data-city="casablanca">taxi derrière la mosquée</button>
-        <button type="button" class="chip" data-text="waslni l farmasyan daba" data-city="casablanca">waslni l farmasyan daba</button>
+        <button type="button" class="chip" data-text="بغيت تاكسي للقارة">🚗 بغيت تاكسي للقارة</button>
+        <button type="button" class="chip" data-text="jib lia khobz o 7lib">🛒 jib lia khobz o 7lib</button>
+        <button type="button" class="chip" data-text="bghit tajine mn resto">🍽️ bghit tajine mn resto</button>
+        <button type="button" class="chip" data-text="taxi derrière la mosquée">🚗 taxi derrière la mosquée</button>
+        <button type="button" class="chip" data-text="ma bghitch taxi bghit pizza">🍕 ma bghitch taxi, bghit pizza</button>
       </div>
+    </div>
 
-      <div class="row">
-        <div>
-          <label for="city">Ville</label>
-          <select id="city" name="city">
-            <option value="casablanca">Casablanca</option>
-            <option value="fes">Fès</option>
-            <option value="marrakech">Marrakech</option>
-            <option value="">Autre / détecter</option>
-          </select>
+    <main class="screens">
+      <!-- Yassir Go -->
+      <section class="screen" id="screen-go" data-tab="go">
+        <div class="screen-title"><span class="swatch"></span>Yassir Go</div>
+        <div id="go-empty" class="empty-state">
+          <div class="big">🚗</div>
+          <p>Dites où aller — « bghit taxi l gare », « taxi derrière la mosquée »…</p>
         </div>
-        <div>
-          <label for="phone">Téléphone <span class="hint">(optionnel)</span></label>
-          <input id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="06 12 34 56 78">
+        <div id="go-content" hidden></div>
+      </section>
+
+      <!-- Yassir Food -->
+      <section class="screen" id="screen-food" data-tab="food">
+        <div class="screen-title"><span class="swatch"></span>Yassir Food</div>
+        <div id="food-empty" class="empty-state">
+          <div class="big">🍽️</div>
+          <p>Dites ce que vous voulez manger — « bghit pizza », « jib lia tajine »…</p>
         </div>
-      </div>
+        <div id="food-content" hidden></div>
+      </section>
 
-      <div class="location" id="locationRow">
-        <button type="button" class="ghost" id="locBtn">📍 Utiliser ma position</button>
-        <span class="hint" id="locStatus">Pour « la mosquée », « lfarmasyan », « 7da bim » : le lieu réel le plus proche (OpenStreetMap).</span>
-      </div>
+      <!-- Yassir Market -->
+      <section class="screen" id="screen-market" data-tab="market">
+        <div class="screen-title"><span class="swatch"></span>Yassir Market</div>
+        <div id="market-empty" class="empty-state">
+          <div class="big">🛒</div>
+          <p>Dites vos courses — « jib lia khobz o 7lib », « chri lia atay »…</p>
+        </div>
+        <div id="market-content" hidden></div>
+      </section>
+    </main>
 
-      <details class="audio">
-        <summary>Ou envoyer un fichier audio (MoulSot)</summary>
-        <input id="audio" name="audio" type="file" accept=".wav,.mp3,.flac,.ogg,.m4a,.webm,audio/*">
-      </details>
-
-      <div class="actions">
-        <button class="primary" type="submit" id="sendBtn">Envoyer</button>
-        <span class="kbd">Ctrl + Entrée</span>
-      </div>
-    </form>
-
-    <section class="card" id="resultCard" hidden aria-live="polite">
-      <div class="result-head">
-        <h2>Résultat</h2>
-        <span class="badge" id="readyBadge"></span>
-      </div>
-      <div class="summary" id="summary"></div>
-      <ul class="notes" id="notes" hidden></ul>
-
-      <div class="actions" id="dispatchRow" hidden>
-        <button class="primary" type="button" id="dispatchBtn">Envoyer à Yassir →</button>
-        <span class="kbd">Simulation : aucun appel réel à l'API Yassir</span>
-      </div>
-      <div class="card" id="dispatchCard" hidden style="margin-top:14px; background:var(--ok-soft); border-color:var(--ok);">
-        <div class="summary" id="dispatchSummary"></div>
-      </div>
-
-      <div class="json-head">
-        <span>JSON Yassir</span>
-        <button type="button" class="ghost" id="copyBtn">Copier</button>
-      </div>
-      <pre id="jsonOutput"></pre>
-    </section>
-
-    <footer>Wassal · MoulSot v0.3 (Apache 2.0) · Lieux © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">contributeurs OpenStreetMap</a> (ODbL)</footer>
+    <nav class="tabbar" aria-label="Services Yassir">
+      <button class="tab" data-tab="go"><span class="ic">🚗</span>Go</button>
+      <button class="tab" data-tab="food"><span class="ic">🍽️</span>Food</button>
+      <button class="tab" data-tab="market"><span class="ic">🛒</span>Market</button>
+    </nav>
   </div>
 
   <script>
     // Même origine si servi par Flask, sinon localhost:5000 (ouverture en file://).
     const API_BASE = location.protocol.startsWith("http") ? "" : "http://localhost:5000";
-
     const $ = (id) => document.getElementById(id);
-    const form = $("commandForm");
-    const sendBtn = $("sendBtn");
 
-    const SERVICE_LABELS = {
-      taxi: "🚕 Taxi · Yassir Go",
-      food: "🍽️ Repas · Yassir Food",
-      market: "🛒 Courses · Yassir Market",
-      package: "📦 Colis (hors offre Yassir Maroc)",
-    };
-    const URGENCY_LABELS = { normal: "Normale", quick: "Rapide", urgent: "Urgente" };
+    // ------------------------------------------------------------------
+    // POC : un seul bouton vocal/texte, au-dessus de l'app Yassir existante.
+    // Le moteur Wassal détecte l'intention et route vers l'onglet Go / Food /
+    // Market déjà pré-rempli -- pas une nouvelle appli, une couche d'accès
+    // vocal pour les 3 services qui existent déjà.
+    // ------------------------------------------------------------------
 
+    const URGENCY_LABEL = { normal: "Normale", quick: "Rapide", urgent: "Urgente" };
+    const RELATION_LABEL = { behind: "derrière ", front: "devant ", near: "près de ", inside: "dans " };
+
+    let userLocation = null;
+    let activeTab = "go";
+    let lastResponse = null; // dernier data de /wassal/command, pour le dispatch
+
+    // --- Health check --------------------------------------------------
     async function checkHealth() {
       try {
         const res = await fetch(`${API_BASE}/wassal/test`);
         const body = await res.json();
         const ok = res.ok && body.success;
-        $("apiDot").className = "dot " + (ok ? "on" : "off");
-        $("apiLabel").textContent = ok ? `API v${body.data.version}` : "API indisponible";
+        $("healthDot").className = "health-dot " + (ok ? "on" : "off");
+        $("statusText").textContent = ok ? `Wassal v${body.data.version} · ${body.data.landmarks.total} lieux` : "API indisponible";
+      } catch (_) {
+        $("healthDot").className = "health-dot off";
+        $("statusText").textContent = "API hors ligne";
+      }
+    }
+
+    // --- Géolocalisation silencieuse (comme dans une vraie app) --------
+    function requestLocationSilently() {
+      if (!navigator.geolocation) return;
+      navigator.geolocation.getCurrentPosition(
+        (pos) => { userLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude }; },
+        () => { userLocation = null; },
+        { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 },
+      );
+    }
+
+    // --- Tabs ------------------------------------------------------------
+    function setActiveTab(tab) {
+      activeTab = tab;
+      document.querySelectorAll(".screen").forEach((el) => el.classList.toggle("active", el.dataset.tab === tab));
+      document.querySelectorAll(".tab").forEach((el) => el.classList.toggle("active", el.dataset.tab === tab));
+    }
+    document.querySelectorAll(".tab").forEach((btn) => btn.addEventListener("click", () => setActiveTab(btn.dataset.tab)));
+
+    // --- Rendering helpers -----------------------------------------------
+    function confidenceBlock(confidence) {
+      const pct = Math.round(confidence * 100);
+      return `<div class="confidence-wrap"><div class="k"><span>Confiance</span><span>${pct}%</span></div>
+        <div class="bar"><span style="width:${pct}%"></span></div></div>`;
+    }
+
+    function metaRow(d) {
+      return `<div class="meta-row">
+        <span class="meta-chip urgency-${d.urgency}">${URGENCY_LABEL[d.urgency] || d.urgency}</span>
+      </div>`;
+    }
+
+    function placeValue(point) {
+      if (!point) return { value: "Position actuelle", sub: "" };
+      const rel = RELATION_LABEL[point.relation] || "";
+      const dist = point.distance_m != null
+        ? (point.distance_m < 1000 ? `${point.distance_m} m` : `${(point.distance_m / 1000).toFixed(1)} km`)
+        : null;
+      return { value: rel + point.place_name, sub: dist ? `à ${dist} de vous` : "" };
+    }
+
+    function missingBanner(d, MISSING_LABELS) {
+      if (!d.missing_fields.length) return "";
+      if (d.missing_fields.includes("user_location")) {
+        return `<div class="cta-banner"><span>📍 Position nécessaire pour trouver le lieu le plus proche</span>
+          <button type="button" onclick="window.__wassalRetryWithLocation()">Activer</button></div>`;
+      }
+      const label = MISSING_LABELS[d.missing_fields[0]] || d.missing_fields[0];
+      return `<div class="cta-banner"><span>${label}</span></div>`;
+    }
+
+    function renderGo(d) {
+      const dest = placeValue(d.destination);
+      const pick = d.pickup ? placeValue(d.pickup) : { value: "Position actuelle", sub: "" };
+      const banner = missingBanner(d, { destination: "Dites où vous voulez aller", service_type: "Dites « taxi vers… »" });
+      $("go-content").innerHTML = `
+        <div class="order-card">
+          <div class="route">
+            <div class="line"><span class="pt"></span><span class="seg"></span><span class="pt dest"></span></div>
+            <div class="stops">
+              <div class="stop"><div class="label">Départ</div><div class="value">${pick.value}</div><div class="sub">${pick.sub}</div></div>
+              <div class="stop"><div class="label">Arrivée</div><div class="value">${dest.value}</div><div class="sub">${dest.sub}</div></div>
+            </div>
+          </div>
+          ${metaRow(d)}
+          ${confidenceBlock(d.confidence)}
+          ${banner}
+          ${d.ready_for_yassir ? `<button class="confirm-btn" type="button" onclick="window.__wassalDispatch('go')">Confirmer la course</button>` : ""}
+        </div>
+        <div id="go-dispatch"></div>`;
+    }
+
+    function renderCart(tab, d, screenLabel) {
+      const items = d.item_details && d.item_details.length
+        ? d.item_details.map((i) => `<div class="cart-item"><span class="qty">${i.quantity}×</span><span class="name">${i.name}</span></div>`).join("")
+        : `<div class="cart-item"><span class="name" style="color:var(--muted)">Aucun article détecté</span></div>`;
+      const dest = d.destination ? placeValue(d.destination) : null;
+      const banner = missingBanner(d, { items: "Dites ce que vous voulez commander", service_type: "Dites ce que vous voulez commander" });
+      $(`${tab}-content`).innerHTML = `
+        <div class="order-card">
+          <div class="cart-list">${items}</div>
+          ${dest ? `<div class="stop" style="margin-top:12px;"><div class="label">Livraison</div><div class="value">${dest.value}</div><div class="sub">${dest.sub}</div></div>` : ""}
+          ${metaRow(d)}
+          ${confidenceBlock(d.confidence)}
+          ${banner}
+          ${d.ready_for_yassir ? `<button class="confirm-btn" type="button" onclick="window.__wassalDispatch('${tab}')">Confirmer la commande</button>` : ""}
+        </div>
+        <div id="${tab}-dispatch"></div>`;
+    }
+
+    function showEmpty(tab, show) {
+      $(`${tab}-empty`).hidden = !show;
+      $(`${tab}-content`).hidden = show;
+    }
+
+    const DEFAULT_EMPTY = {};
+    ["go", "food", "market"].forEach((t) => { DEFAULT_EMPTY[t] = $(`${t}-empty`).innerHTML; });
+    const bannerTimers = {};
+
+    function showBanner(tab, html) {
+      showEmpty(tab, true);
+      $(`${tab}-empty`).innerHTML = html;
+      clearTimeout(bannerTimers[tab]);
+      bannerTimers[tab] = setTimeout(() => {
+        if ($(`${tab}-content`).hidden && $(`${tab}-empty`).innerHTML === html) {
+          $(`${tab}-empty`).innerHTML = DEFAULT_EMPTY[tab];
+        }
+      }, 4000);
+    }
+
+    const UNKNOWN_HTML = `<div class="big">🤔</div><p>Pas compris. Réessayez, ex. « bghit taxi » ou « jib lia khobz ».</p>`;
+    const PACKAGE_HTML = `<div class="big">📦</div><p>Colis : bientôt disponible dans l'offre Yassir Maroc (Go, Food, Market seulement pour l'instant).</p>`;
+
+    // --- Command submission ------------------------------------------------
+    let lastQueryOptions = null;
+
+    function buildOptions(text) {
+      return {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          darija_text: text,
+          ...(userLocation ? { user_lat: userLocation.lat, user_lng: userLocation.lng } : {}),
+        }),
+      };
+    }
+
+    async function runCommand(text) {
+      if (!text.trim()) return;
+      lastQueryOptions = buildOptions(text);
+      $("listeningHint").textContent = "Analyse…";
+      try {
+        const res = await fetch(`${API_BASE}/wassal/command`, lastQueryOptions);
+        const body = await res.json();
+        $("listeningHint").textContent = "";
+        if (!body.success) {
+          showBanner(activeTab, `<div class="big">⚠️</div><p>${(body.error && body.error.message) || "Erreur"}</p>`);
+          return;
+        }
+        const d = body.data;
+        lastResponse = d;
+
+        if (!d.target_screen) {
+          const html = d.subtype === "package" ? PACKAGE_HTML : UNKNOWN_HTML;
+          showBanner(activeTab, html);
+          return;
+        }
+        if (d.target_screen === "go") renderGo(d); else renderCart(d.target_screen, d, d.target_screen);
+        showEmpty(d.target_screen, false);
+        setActiveTab(d.target_screen);
       } catch (err) {
-        $("apiDot").className = "dot off";
-        $("apiLabel").textContent = "API hors ligne";
+        $("listeningHint").textContent = "";
+        showBanner(activeTab, `<div class="big">📡</div><p>API injoignable (${API_BASE || location.origin}). Lancez : python src/api.py</p>`);
       }
     }
 
-    function stat(key, value, confidence) {
-      const box = document.createElement("div");
-      box.className = "stat";
-      const k = document.createElement("div");
-      k.className = "k";
-      k.textContent = key;
-      const v = document.createElement("div");
-      v.className = "v";
-      v.textContent = value;
-      box.append(k, v);
-      if (typeof confidence === "number") {
-        const bar = document.createElement("div");
-        bar.className = "bar";
-        const fill = document.createElement("span");
-        bar.appendChild(fill);
-        box.appendChild(bar);
-        requestAnimationFrame(() => { fill.style.width = `${Math.round(confidence * 100)}%`; });
-      }
-      return box;
-    }
-
-    let userLocation = null;
-
-    const MISSING_LABELS = {
-      user_location: "Votre position (bouton 📍) pour trouver le lieu le plus proche",
-      destination: "La destination",
-      items: "Les articles à commander",
-      service_type: "Le service (taxi, repas, courses…)",
-    };
-
-    function placeLabel(point) {
-      if (!point) return "—";
-      const rel = { behind: "derrière ", front: "devant ", near: "près de ", inside: "dans " }[point.relation] || "";
-      const dist = point.distance_m != null ? ` (à ${point.distance_m < 1000 ? point.distance_m + " m" : (point.distance_m / 1000).toFixed(1) + " km"})` : "";
-      return rel + point.place_name + dist;
-    }
-
-    function locate() {
-      const status = $("locStatus");
-      if (!navigator.geolocation) {
-        status.textContent = "Géolocalisation non disponible dans ce navigateur.";
-        return;
-      }
-      status.textContent = "Localisation…";
+    window.__wassalRetryWithLocation = function () {
+      $("listeningHint").textContent = "Localisation…";
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           userLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-          $("locationRow").classList.remove("need");
-          status.textContent = `Position : ${userLocation.lat.toFixed(5)}, ${userLocation.lng.toFixed(5)} (± ${Math.round(pos.coords.accuracy)} m)`;
+          runCommand($("darijaText").value.trim() || (lastResponse && lastResponse.input_text) || "");
         },
-        (err) => {
-          userLocation = null;
-          status.textContent = err.code === err.PERMISSION_DENIED
-            ? "Position refusée : autorisez la localisation pour ce site."
-            : "Position indisponible (ouvrez la page via http://localhost:5000).";
-        },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
+        () => { $("listeningHint").textContent = "Position refusée."; },
+        { enableHighAccuracy: true, timeout: 10000 },
       );
-    }
+    };
 
-    let currentYassirRequest = null;
-
-    function renderResult(body, httpStatus) {
-      $("resultCard").hidden = false;
-      $("jsonOutput").textContent = JSON.stringify(body, null, 2);
-      const summary = $("summary");
-      const notes = $("notes");
-      summary.replaceChildren();
-      notes.replaceChildren();
-      const badge = $("readyBadge");
-      $("dispatchRow").hidden = true;
-      $("dispatchCard").hidden = true;
-      currentYassirRequest = null;
-
-      if (!body.success) {
-        badge.className = "badge err";
-        badge.textContent = `Erreur ${httpStatus}`;
-        summary.appendChild(stat("Message", body.error ? body.error.message : "Erreur inconnue"));
-        notes.hidden = true;
-        return;
-      }
-
-      const d = body.data;
-      badge.className = "badge " + (d.ready_for_yassir ? "ok" : "warn");
-      badge.textContent = d.ready_for_yassir ? "✓ Prêt pour Yassir" : "Informations manquantes";
-      if (d.ready_for_yassir && d.yassir_request) {
-        currentYassirRequest = d.yassir_request;
-        $("dispatchRow").hidden = false;
-        $("dispatchBtn").disabled = false;
-        $("dispatchBtn").textContent = "Envoyer à Yassir →";
-      }
-
-      summary.append(
-        stat("Service", SERVICE_LABELS[d.subtype] || "Non reconnu"),
-        stat("Destination", placeLabel(d.destination)),
-      );
-      if (d.pickup) summary.appendChild(stat("Départ", placeLabel(d.pickup)));
-      if (d.items && d.items.length) {
-        summary.appendChild(stat("Articles", d.item_details.map((i) => `${i.quantity}× ${i.name}`).join(", ")));
-      }
-      summary.append(
-        stat("Urgence", URGENCY_LABELS[d.urgency] || d.urgency),
-        stat("Confiance", `${Math.round(d.confidence * 100)} %`, d.confidence),
-      );
-      if (d.transcription) summary.appendChild(stat("Transcription", d.transcription.transcription));
-
-      const messages = [
-        ...d.missing_fields.map((f) => `Il manque : ${MISSING_LABELS[f] || f}`),
-        ...d.warnings,
-      ];
-      messages.forEach((m) => {
-        const li = document.createElement("li");
-        li.textContent = m;
-        notes.appendChild(li);
-      });
-      notes.hidden = messages.length === 0;
-      $("locationRow").classList.toggle("need", d.missing_fields.includes("user_location"));
-    }
-
-    async function submit(event) {
-      event.preventDefault();
-      const text = $("darijaText").value.trim();
-      const audioFile = $("audio").files[0];
-      if (!text && !audioFile) {
-        $("darijaText").focus();
-        return;
-      }
-
-      let options;
-      if (audioFile) {
-        const data = new FormData();
-        data.append("audio", audioFile);
-        data.append("city", $("city").value);
-        data.append("phone", $("phone").value.trim());
-        if (userLocation) {
-          data.append("user_lat", userLocation.lat);
-          data.append("user_lng", userLocation.lng);
-        }
-        if (text) data.append("darija_text", text);
-        options = { method: "POST", body: data };
-      } else {
-        options = {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            darija_text: text,
-            city: $("city").value,
-            phone: $("phone").value.trim(),
-            ...(userLocation ? { user_lat: userLocation.lat, user_lng: userLocation.lng } : {}),
-          }),
-        };
-      }
-
-      sendBtn.disabled = true;
-      sendBtn.textContent = audioFile ? "Transcription…" : "Envoi…";
-      try {
-        const res = await fetch(`${API_BASE}/wassal/command`, options);
-        let body;
-        try {
-          body = await res.json();
-        } catch (_) {
-          body = { success: false, error: { message: `Réponse invalide (${res.status})` } };
-        }
-        renderResult(body, res.status);
-      } catch (err) {
-        renderResult({ success: false, error: { message: `Impossible de joindre l'API (${API_BASE || location.origin}). Lancez : python src/api.py` } }, 0);
-      } finally {
-        sendBtn.disabled = false;
-        sendBtn.textContent = "Envoyer";
-      }
-    }
-
-    async function dispatchToYassir() {
-      if (!currentYassirRequest) return;
-      const btn = $("dispatchBtn");
-      btn.disabled = true;
-      btn.textContent = "Envoi…";
+    window.__wassalDispatch = async function (tab) {
+      if (!lastResponse || !lastResponse.yassir_request) return;
+      const host = $(`${tab}-dispatch`);
+      host.innerHTML = `<div class="sim-flag">Envoi…</div>`;
       try {
         const res = await fetch(`${API_BASE}/wassal/dispatch`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ yassir_request: currentYassirRequest }),
+          body: JSON.stringify({ yassir_request: lastResponse.yassir_request }),
         });
         const body = await res.json();
-        const box = $("dispatchSummary");
-        box.replaceChildren();
         if (!body.success) {
-          box.appendChild(stat("Erreur", body.error ? body.error.message : "Échec de l'envoi"));
-        } else {
-          const d = body.data;
-          const person = d.driver || d.courier;
-          box.append(
-            stat("Statut", "✓ Commande envoyée (simulation)"),
-            stat("N° commande", d.order_id),
-            stat("ETA", `${d.eta_minutes} min`),
-          );
-          if (person) box.appendChild(stat(d.driver ? "Chauffeur" : "Livreur", `${person.name} · ${person.vehicle}`));
+          host.innerHTML = `<div class="err-banner">${(body.error && body.error.message) || "Échec de l'envoi"}</div>`;
+          return;
         }
-        $("dispatchCard").hidden = false;
-        btn.textContent = "Renvoyer";
-      } catch (err) {
-        $("dispatchSummary").replaceChildren(stat("Erreur", `Impossible de joindre l'API (${API_BASE || location.origin})`));
-        $("dispatchCard").hidden = false;
-        btn.textContent = "Réessayer";
-      } finally {
-        btn.disabled = false;
+        const d = body.data;
+        const person = d.driver || d.courier;
+        host.innerHTML = `
+          <div class="dispatch-card">
+            <div class="head">✓ Commande envoyée</div>
+            <div class="grid">
+              <div class="cell"><div class="k">N° commande</div><div class="v">${d.order_id}</div></div>
+              <div class="cell"><div class="k">ETA</div><div class="v">${d.eta_minutes} min</div></div>
+              ${person ? `<div class="cell" style="grid-column:1/-1"><div class="k">${d.driver ? "Chauffeur" : "Livreur"}</div><div class="v">${person.name} · ${person.vehicle}</div></div>` : ""}
+            </div>
+          </div>
+          <div class="sim-flag">Simulation POC — aucun appel réel à l'API Yassir (à brancher).</div>`;
+      } catch (_) {
+        host.innerHTML = `<div class="err-banner">API injoignable pour l'envoi.</div>`;
       }
-    }
+    };
 
-    form.addEventListener("submit", submit);
-    $("dispatchBtn").addEventListener("click", dispatchToYassir);
-    $("locBtn").addEventListener("click", locate);
-    $("darijaText").addEventListener("keydown", (e) => {
-      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) form.requestSubmit();
+    // --- Text input + examples ---------------------------------------------
+    $("commandForm").addEventListener("submit", (e) => {
+      e.preventDefault();
+      runCommand($("darijaText").value);
     });
     document.querySelectorAll(".chip").forEach((chip) => {
       chip.addEventListener("click", () => {
         $("darijaText").value = chip.dataset.text;
-        $("city").value = chip.dataset.city;
-        $("audio").value = "";
-        form.requestSubmit();
+        runCommand(chip.dataset.text);
       });
     });
-    $("copyBtn").addEventListener("click", async () => {
-      try {
-        await navigator.clipboard.writeText($("jsonOutput").textContent);
-        $("copyBtn").textContent = "Copié ✓";
-      } catch (_) {
-        $("copyBtn").textContent = "Échec";
-      }
-      setTimeout(() => { $("copyBtn").textContent = "Copier"; }, 1500);
-    });
 
+    // --- Voice recording (MediaRecorder -> /wassal/command multipart) ------
+    let mediaRecorder = null;
+    let audioChunks = [];
+
+    async function toggleRecording() {
+      const btn = $("micBtn");
+      if (mediaRecorder && mediaRecorder.state === "recording") {
+        mediaRecorder.stop();
+        return;
+      }
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        $("listeningHint").textContent = "Micro non disponible ici : tapez votre commande.";
+        $("darijaText").focus();
+        return;
+      }
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioChunks = [];
+        mediaRecorder = new MediaRecorder(stream);
+        mediaRecorder.ondataavailable = (e) => audioChunks.push(e.data);
+        mediaRecorder.onstop = async () => {
+          btn.classList.remove("recording");
+          stream.getTracks().forEach((t) => t.stop());
+          const blob = new Blob(audioChunks, { type: "audio/webm" });
+          await sendAudio(blob);
+        };
+        mediaRecorder.start();
+        btn.classList.add("recording");
+        $("listeningHint").textContent = "Écoute… appuyez à nouveau pour arrêter.";
+      } catch (_) {
+        $("listeningHint").textContent = "Micro refusé : tapez votre commande.";
+      }
+    }
+
+    async function sendAudio(blob) {
+      $("listeningHint").textContent = "Transcription…";
+      const data = new FormData();
+      data.append("audio", blob, "wassal.webm");
+      if (userLocation) { data.append("user_lat", userLocation.lat); data.append("user_lng", userLocation.lng); }
+      try {
+        const res = await fetch(`${API_BASE}/wassal/command`, { method: "POST", body: data });
+        const body = await res.json();
+        $("listeningHint").textContent = "";
+        if (!body.success) {
+          const msg = body.error && body.error.code === "MODEL_UNAVAILABLE"
+            ? "Modèle vocal non installé sur ce POC : tapez votre commande."
+            : (body.error && body.error.message) || "Échec de la transcription";
+          $("listeningHint").textContent = msg;
+          return;
+        }
+        const d = body.data;
+        if (d.transcription) $("darijaText").value = d.transcription.transcription;
+        lastResponse = d;
+        if (!d.target_screen) {
+          showBanner(activeTab, d.subtype === "package" ? PACKAGE_HTML : UNKNOWN_HTML);
+          return;
+        }
+        if (d.target_screen === "go") renderGo(d); else renderCart(d.target_screen, d, d.target_screen);
+        showEmpty(d.target_screen, false);
+        setActiveTab(d.target_screen);
+      } catch (_) {
+        $("listeningHint").textContent = "API injoignable.";
+      }
+    }
+
+    $("micBtn").addEventListener("click", toggleRecording);
+
+    setActiveTab("go");
     checkHealth();
+    requestLocationSilently();
   </script>
 </body>
 </html>
