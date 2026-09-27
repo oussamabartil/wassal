@@ -23,6 +23,14 @@ Les adresses sont résolues sur **de vrais lieux** : **11 352 lieux OpenStreetMa
 
 📖 Explication détaillée, exemples réels et limites : [docs/COMMENT_CA_MARCHE.md](docs/COMMENT_CA_MARCHE.md)
 
+## Aperçu : intégration dans l'app Yassir
+
+Wassal n'est pas pensé comme une appli à part : c'est un bouton vocal/texte au-dessus des écrans **Go / Food / Market** qui existent déjà dans l'app Yassir. On parle ou on tape une commande en Darija, l'intention est détectée automatiquement, et l'app bascule directement sur l'onglet et l'écran de commande déjà pré-remplis (destination, articles…) — il ne reste qu'à confirmer.
+
+<img src="docs/screenshots/wassal-go-mobile.png" alt="Wassal : commande vocale « بغيت تاكسي للقارة » détectée et routée automatiquement vers l'écran Yassir Go, destination et confiance déjà pré-remplies" width="360">
+
+*`frontend/index.html` sert ce POC mobile (voix + texte, 3 onglets, dispatch simulé) pour démontrer l'idée d'intégration à l'équipe — pas un client mobile natif.*
+
 ---
 
 ## Démarrage rapide
@@ -74,7 +82,7 @@ wassal/
 │   ├── categories.py   # Catégories de lieux : mots Darija <-> tags OpenStreetMap
 │   ├── normalize.py    # Normalisation arabe / arabizi / français partagée
 │   └── api.py          # Serveur Flask (CORS, validation, erreurs JSON standardisées)
-├── frontend/index.html # Interface web mobile-friendly (servie sur /)
+├── frontend/index.html # POC mobile (onglets Go/Food/Market, voix+texte) — servie sur /
 ├── docs/COMMENT_CA_MARCHE.md  # Fonctionnement détaillé + limites + mesures à faire
 ├── data/osm/           # Vrais lieux OpenStreetMap (ODbL), un fichier par ville
 ├── scripts/import_osm.py  # Réimporte data/osm/ depuis OpenStreetMap
