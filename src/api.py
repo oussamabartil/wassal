@@ -250,6 +250,7 @@ def process_command(text: str, city: Optional[str], phone: Optional[str],
         "warnings": warnings,
         "language": parsed["language"],
         "matched_keywords": parsed["matched_keywords"],
+        "negation_detected": parsed["negation_detected"],
         "input_text": text,
         "city": city,
     }
