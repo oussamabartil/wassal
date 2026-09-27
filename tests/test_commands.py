@@ -411,6 +411,33 @@ class TestTranscribe:
         f.write_bytes(b"")
         assert transcribe_darija_audio(str(f))["error_code"] == "EMPTY_AUDIO"
 
+    def test_background_warmup_reports_loading_then_ready(self, monkeypatch):
+        import threading
+        release = threading.Event()
+
+        def slow_load():
+            release.wait(5)
+            transcribe_module._model = object()
+            return transcribe_module._model
+
+        monkeypatch.setattr(transcribe_module, "_model", None)
+        monkeypatch.setattr(transcribe_module, "_load_error", None)
+        monkeypatch.setattr(transcribe_module, "_warmup_thread", None)
+        monkeypatch.setattr(transcribe_module, "get_asr_model", slow_load)
+
+        transcribe_module.start_background_warmup()
+        assert transcribe_module.model_status()["state"] == "loading"
+        release.set()
+        transcribe_module._warmup_thread.join(5)
+        assert transcribe_module.model_status() == {"state": "ready", "error": None}
+
+    def test_model_status_reports_load_error(self, monkeypatch):
+        monkeypatch.setattr(transcribe_module, "_model", None)
+        monkeypatch.setattr(transcribe_module, "_warmup_thread", None)
+        monkeypatch.setattr(transcribe_module, "_load_error", "could not load model 'x': offline")
+        assert transcribe_module.model_status() == {
+            "state": "error", "error": "could not load model 'x': offline"}
+
     def test_extract_text_handles_list_of_results(self):
         # qwen_asr.transcribe() renvoie une liste d'ASRTranscription.
         class Result:
@@ -485,6 +512,7 @@ class TestApi:
         body = res.get_json()
         assert body["success"] is True
         assert body["data"]["status"] == "ok"
+        assert body["data"]["asr_model_status"]["state"] in ("not_loaded", "loading", "ready", "error")
         assert body["data"]["landmarks"]["by_source"]["osm"] > 1000
         assert "ODbL" in body["data"]["osm"]["casablanca"]["license"]
         assert "casablanca" in body["data"]["cities"]

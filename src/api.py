@@ -40,7 +40,10 @@ from werkzeug.utils import secure_filename  # noqa: E402
 from src import __version__  # noqa: E402
 from src.landmarks import MOROCCO_BBOX, LandmarkResolver, haversine_km  # noqa: E402
 from src.parser import MAX_TEXT_LENGTH, parse_darija_command  # noqa: E402
-from src.transcribe import DEFAULT_MODEL, SUPPORTED_EXTENSIONS, is_model_loaded, transcribe_darija_audio  # noqa: E402
+from src.transcribe import (  # noqa: E402
+    DEFAULT_MODEL, SUPPORTED_EXTENSIONS, is_model_loaded, model_status, start_background_warmup,
+    transcribe_darija_audio,
+)
 
 load_dotenv(ROOT_DIR / ".env")
 
@@ -302,6 +305,13 @@ def create_app(config: Optional[Dict[str, Any]] = None) -> Flask:
     if osm_dir and not Path(osm_dir).is_absolute():
         osm_dir = str(ROOT_DIR / osm_dir)
     resolver = LandmarkResolver(store_path=app.config["LANDMARKS_STORE"], osm_dir=osm_dir or None)
+
+    # Sous gunicorn, le bloc __main__ ne s'exécute pas : on configure les logs ici.
+    if not logging.getLogger().handlers:
+        _configure_logging()
+    # PRELOAD_MODEL=true : charge MoulSot en arrière-plan dès le démarrage.
+    if os.getenv("PRELOAD_MODEL", "false").lower() == "true" and not app.config.get("TESTING"):
+        start_background_warmup()
     app.extensions["wassal_resolver"] = resolver
 
     # ---------------------------------------------------------- réponses JSON
@@ -383,6 +393,7 @@ def create_app(config: Optional[Dict[str, Any]] = None) -> Flask:
             "version": __version__,
             "asr_model": os.getenv("MOULSOT_MODEL", DEFAULT_MODEL),
             "asr_model_loaded": is_model_loaded(),
+            "asr_model_status": model_status(),
             "landmarks": resolver.stats(),
             "osm": {city: {k: meta.get(k) for k in ("osm_timestamp", "loaded", "license")}
                     for city, meta in resolver.osm_meta.items()},
@@ -575,10 +586,6 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT", "5000"))
     host = os.getenv("HOST", "127.0.0.1")
     debug = os.getenv("FLASK_ENV", "production").lower() == "development"
-
-    if os.getenv("PRELOAD_MODEL", "false").lower() == "true":
-        from src.transcribe import warmup
-        warmup()
 
     logger.info("Wassal API v%s on http://%s:%d (debug=%s)", __version__, host, port, debug)
     create_app().run(host=host, port=port, debug=debug)

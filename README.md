@@ -67,6 +67,8 @@ Tests (sans télécharger le modèle, en quelques secondes) :
 pytest -v
 ```
 
+**Mise en ligne (avec la voix) :** Hugging Face Spaces, voir [docs/DEPLOIEMENT_HUGGINGFACE.md](docs/DEPLOIEMENT_HUGGINGFACE.md).
+
 > Le modèle MoulSot est téléchargé depuis HuggingFace **au premier envoi audio**, pas au démarrage. Mettez `PRELOAD_MODEL=true` pour le charger au lancement. Formats acceptés : wav, flac, ogg, mp3, m4a, aac, webm, opus, mp4. Les formats compressés sont décodés avec PyAV, qui embarque ffmpeg : aucune installation système nécessaire.
 
 ---
