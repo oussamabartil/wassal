@@ -202,6 +202,9 @@
   .dispatch-card .cell .k { font-size: .72rem; color: var(--muted); text-transform: uppercase; }
   .dispatch-card .cell .v { font-weight: 700; margin-top: 1px; }
   .sim-flag { font-size: .72rem; color: var(--muted); margin-top: 10px; text-align: center; }
+  /* Attribution exigée par la licence ODbL des lieux OpenStreetMap (data/osm/). */
+  .osm-credit { font-size: .68rem; color: var(--muted); text-align: center; padding: 4px 12px; flex-shrink: 0; background: var(--app-bg); }
+  .osm-credit a { color: inherit; }
 
   /* --- Bottom tab bar (mirrors Yassir's own Go / Food / Market) --- */
   .tabbar { display: flex; border-top: 1px solid var(--border); background: var(--surface); flex-shrink: 0; padding-bottom: env(safe-area-inset-bottom); }
@@ -278,6 +281,8 @@
         <div id="market-content" hidden></div>
       </section>
     </main>
+
+    <div class="osm-credit">Lieux © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">contributeurs OpenStreetMap</a> (ODbL)</div>
 
     <nav class="tabbar" aria-label="Services Yassir">
       <button class="tab" data-tab="go"><span class="ic">🚗</span>Go</button>
